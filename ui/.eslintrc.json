@@ -1,5 +1,10 @@
 {
+  "root": true,
   "parser": "@typescript-eslint/parser",
+  "parserOptions": {
+    "project": "tsconfig.json",
+    "sourceType": "module"
+  },
   "extends": [
     "next",
     "plugin:@typescript-eslint/recommended",
@@ -7,9 +12,6 @@
     "plugin:prettier/recommended"
   ],
   "plugins": ["@typescript-eslint", "simple-import-sort"],
-  "parserOptions": {
-    "project": "./tsconfig.json"
-  },
   "rules": {
     "simple-import-sort/imports": "error",
     "simple-import-sort/exports": "error"
