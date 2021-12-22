@@ -1,0 +1,10 @@
+{
+  "name": "karlo",
+  "private": true,
+  "repository": "git@github.com:bentruyman/karlo.git",
+  "author": "Ben Truyman <ben@truyman.com>",
+  "license": "MIT",
+  "workspaces": [
+    "packages/*"
+  ]
+}
