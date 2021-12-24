@@ -5,10 +5,10 @@
       "path": "."
     },
     {
-      "path": "api"
+      "path": "packages/api"
     },
     {
-      "path": "ui"
+      "path": "packages/ui"
     }
   ],
   "settings": {
