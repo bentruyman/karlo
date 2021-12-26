@@ -3,22 +3,28 @@
   "private": true,
   "version": "1.0.0",
   "scripts": {
-    "build": "next build",
-    "dev": "next dev",
-    "lint": "next lint",
-    "start": "next start"
+    "build": "tauri build",
+    "dev": "parcel src/index.html",
+    "format": "yarn format:src && yarn format:css",
+    "format:css": "prettier --write src/**/*.css",
+    "format:src": "yarn lint:src --fix",
+    "lint": "yarn lint:src && yarn lint:css",
+    "lint:css": "prettier --check src/**/*.css",
+    "lint:src": "eslint --ext .ts,.tsx src"
   },
   "dependencies": {
+    "@tauri-apps/api": "^1.0.0-beta.8",
     "classnames": "^2.3.1",
-    "next": "12.0.7",
-    "react": "17.0.2",
-    "react-dom": "17.0.2",
+    "react": "^17.0.2",
+    "react-dom": "^17.0.2",
     "react-use": "^17.3.1",
     "recoil": "^0.5.2"
   },
   "devDependencies": {
-    "@types/node": "16.11.6",
-    "@types/react": "17.0.34",
+    "@tauri-apps/cli": "^1.0.0-beta.10",
+    "@types/node": "^16.11.17",
+    "@types/react": "^17.0.38",
+    "@types/react-dom": "^17.0.11",
     "@typescript-eslint/eslint-plugin": "^5.8.0",
     "@typescript-eslint/parser": "^5.8.0",
     "eslint": "8.5.0",
@@ -26,7 +32,8 @@
     "eslint-config-prettier": "^8.3.0",
     "eslint-plugin-prettier": "^4.0.0",
     "eslint-plugin-simple-import-sort": "^7.0.0",
+    "parcel": "^2.0.1",
     "prettier": "^2.5.1",
-    "typescript": "4.4.4"
+    "typescript": "^4.5.4"
   }
 }

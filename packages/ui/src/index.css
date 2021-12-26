@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap');
+@import url("https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap");
 
 * {
   box-sizing: border-box;
@@ -8,15 +8,17 @@ html,
 body {
   padding: 0;
   margin: 0;
-  font-family: 'Press Start 2P';
+  font-family: "Press Start 2P";
 }
 
 html {
+  color: #fff;
   background: #000;
   overflow: hidden;
 }
 
-ol, ul {
+ol,
+ul {
   list-style: none;
   margin: 0;
   padding: 0;
