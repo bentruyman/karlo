@@ -3,7 +3,8 @@
   "private": true,
   "version": "1.0.0",
   "scripts": {
-    "build": "tauri build",
+    "build": "parcel build src/index.html",
+    "compile": "tauri build",
     "dev": "parcel src/index.html",
     "format": "yarn format:src && yarn format:css",
     "format:css": "prettier --write src/**/*.css",
