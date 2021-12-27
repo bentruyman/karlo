@@ -1,5 +1,14 @@
-import * as styles from "./App.module.css";
+import React from "react";
 
 export default function App() {
-  return <div className={styles.app}>Hello World</div>;
+  return (
+    <div>
+      Hello World
+      <style jsx>{`
+        .app {
+          color: white;
+        }
+      `}</style>
+    </div>
+  );
 }
