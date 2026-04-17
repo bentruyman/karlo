@@ -1,0 +1,6 @@
+{
+  "identifier": "default",
+  "description": "Default capability set for the Karlo desktop shell.",
+  "windows": ["main"],
+  "permissions": ["core:default"]
+}
