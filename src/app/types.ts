@@ -5,8 +5,6 @@ export type BrowseViewId =
   | "year"
   | "manufacturer";
 
-export type FocusZone = "views" | "carousel";
-
 export interface GameRecord {
   id: string;
   title: string;
@@ -14,14 +12,9 @@ export interface GameRecord {
   year: number;
   manufacturer: string;
   genre: string;
-  description: string;
-  marqueeText: string;
-  attractCaption: string;
-  isFavorite: boolean;
-  wasRecentlyPlayed: boolean;
-  accentPrimary: string;
-  accentSecondary: string;
-  cabinetColor: string;
+  attractCaption?: string;
+  isFavorite?: boolean;
+  wasRecentlyPlayed?: boolean;
 }
 
 export interface BrowseView {
