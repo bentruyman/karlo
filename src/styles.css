@@ -3,7 +3,7 @@
 @font-face {
   font-family: "FairSans";
   font-style: normal;
-  font-weight: 500;
+  font-weight: 400;
   font-display: swap;
   src: url("./assets/fonts/FairSansRegular.ttf") format("truetype");
 }
@@ -41,7 +41,7 @@ html {
   color: var(--color-cab-ink);
   color-scheme: dark;
   font-family: var(--font-sans);
-  font-weight: 500;
+  font-weight: 400;
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
 }

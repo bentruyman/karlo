@@ -3,12 +3,6 @@
     {
       "name": "root",
       "path": "."
-    },
-    {
-      "path": "packages/api"
-    },
-    {
-      "path": "packages/ui"
     }
   ],
   "settings": {

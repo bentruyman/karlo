@@ -81,26 +81,34 @@ export function getGamesForView(
 
   if (viewId === "genre") {
     return {
-      games: [...games].sort((l, r) => {
-        const g = l.genre.localeCompare(r.genre);
-        return g === 0 ? compareByTitle(l, r) : g;
+      games: [...games].sort((left, right) => {
+        const genreComparison = left.genre.localeCompare(right.genre);
+        return genreComparison === 0
+          ? compareByTitle(left, right)
+          : genreComparison;
       }),
     };
   }
 
   if (viewId === "year") {
     return {
-      games: [...games].sort((l, r) => {
-        const y = l.year - r.year;
-        return y === 0 ? compareByTitle(l, r) : y;
+      games: [...games].sort((left, right) => {
+        const yearComparison = left.year - right.year;
+        return yearComparison === 0
+          ? compareByTitle(left, right)
+          : yearComparison;
       }),
     };
   }
 
   return {
-    games: [...games].sort((l, r) => {
-      const m = l.manufacturer.localeCompare(r.manufacturer);
-      return m === 0 ? compareByTitle(l, r) : m;
+    games: [...games].sort((left, right) => {
+      const manufacturerComparison = left.manufacturer.localeCompare(
+        right.manufacturer,
+      );
+      return manufacturerComparison === 0
+        ? compareByTitle(left, right)
+        : manufacturerComparison;
     }),
   };
 }

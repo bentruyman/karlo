@@ -7,7 +7,7 @@
     "skipLibCheck": true,
     "allowSyntheticDefaultImports": true,
     "strict": true,
-    "types": ["node", "vite/client"],
+    "types": ["bun", "node", "vite/client"],
     "forceConsistentCasingInFileNames": true,
     "module": "ESNext",
     "moduleResolution": "Bundler",

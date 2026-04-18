@@ -8,8 +8,6 @@ The target environment is a real 4:3 CRT television running at 480i, driven by a
 
 This repo is being rebooted.
 
-The existing `packages/*` code is a legacy prototype and is not the current architecture direction.
-
 ## Direction
 
 - Single local app, not a web app plus separate backend service
@@ -38,10 +36,17 @@ Milestone 0 is now scaffolded at the repo root.
 ### Commands
 
 - `bun install`
+- `bun test`
 - `bun run dev`
 - `bun run tauri:dev`
 
-The old `packages/*` tree is still present as legacy reference material, but the active app now lives in:
+The active app lives in:
 
 - `src/`
 - `src-tauri/`
+
+### Repo Shape
+
+- `docs/` for planning and project notes
+- `src/` for the React/Vite cabinet UI
+- `src-tauri/` for Rust commands, persistence, and launcher work

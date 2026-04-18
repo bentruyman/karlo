@@ -8,7 +8,13 @@ import {
   type ReactNode,
 } from "react";
 
-import { clampIndex, getTitleBucket, jumpLetter, TITLE_BUCKETS } from "./app/browse";
+import {
+  clampIndex,
+  getTitleBucket,
+  jumpLetter,
+  TITLE_BUCKETS,
+  wrapIndex,
+} from "./app/browse";
 import { browseViews, getGamesForView, mockGames } from "./app/mock-data";
 import type { BrowseViewId, GameRecord } from "./app/types";
 
@@ -65,7 +71,7 @@ export default function App() {
 
   function cycleView(direction: 1 | -1) {
     startTransition(() => {
-      setViewIndex((c) => (c + direction + browseViews.length) % browseViews.length);
+      setViewIndex((current) => wrapIndex(current + direction, browseViews.length));
       setSelectedIndex(0);
     });
   }
@@ -85,7 +91,7 @@ export default function App() {
 
     startTransition(() => {
       setSelectedIndex((current) =>
-        clampIndex(current + delta, visibleGames.length),
+        wrapIndex(current + delta, visibleGames.length),
       );
     });
   }
@@ -115,30 +121,52 @@ export default function App() {
     const key = event.key.toLowerCase();
     if (!HANDLED_KEYS.has(key)) return;
 
-    event.preventDefault();
-    noteInteraction();
-
     switch (key) {
-      case "arrowup": stepSelection(-1); return;
-      case "arrowdown": stepSelection(1); return;
-      case "arrowleft": nextLetter(-1); return;
-      case "arrowright": nextLetter(1); return;
+      case "arrowup":
+        event.preventDefault();
+        noteInteraction();
+        stepSelection(-1);
+        return;
+      case "arrowdown":
+        event.preventDefault();
+        noteInteraction();
+        stepSelection(1);
+        return;
+      case "arrowleft":
+        event.preventDefault();
+        noteInteraction();
+        nextLetter(-1);
+        return;
+      case "arrowright":
+        event.preventDefault();
+        noteInteraction();
+        nextLetter(1);
+        return;
       case "enter":
       case "1":
       case "z":
+        noteInteraction();
         return;
       case "x":
+        event.preventDefault();
+        noteInteraction();
         toggleFavorite();
         return;
       case "c":
       case " ":
+        event.preventDefault();
+        noteInteraction();
         cycleView(1);
         return;
       case "v":
+        event.preventDefault();
+        noteInteraction();
         cycleView(-1);
         return;
       case "b":
       case "5":
+        event.preventDefault();
+        noteInteraction();
         jumpToView("favorites");
         return;
     }
@@ -161,7 +189,7 @@ export default function App() {
   useEffect(() => {
     if (!isAttractMode || visibleGames.length <= 1) return;
     const id = window.setInterval(() => {
-      setSelectedIndex((c) => (c + 1) % visibleGames.length);
+      setSelectedIndex((current) => wrapIndex(current + 1, visibleGames.length));
     }, ATTRACT_MODE_STEP_MS);
     return () => window.clearInterval(id);
   }, [isAttractMode, visibleGames.length]);
@@ -315,7 +343,7 @@ function ListColumn({
                 className="flex-1 flex items-baseline gap-[1cqw] font-display text-left leading-[0.95] tracking-[0.01em]"
                 style={{
                   fontSize: isActive ? "3.6cqh" : "2.6cqh",
-                  fontWeight: isActive ? 700 : 500,
+                  fontWeight: isActive ? 700 : 400,
                   color: isActive ? "var(--color-cab-ink)" : "var(--color-cab-mute)",
                 }}
               >
@@ -380,7 +408,7 @@ function LetterRibbon({
                   : isPresent
                     ? "var(--color-cab-ink)"
                     : "var(--color-cab-dim)",
-                fontWeight: isCurrent ? 700 : 500,
+                fontWeight: isCurrent ? 700 : 400,
               }}
             >
               {bucket}
@@ -500,7 +528,7 @@ function ControlHints() {
     ["Ⓐ", "LAUNCH"],
     ["Ⓑ", "FAVORITE"],
     ["Ⓒ", "MODE"],
-    ["¢", "BACK"],
+    ["↩", "BACK"],
   ];
   return (
     <div

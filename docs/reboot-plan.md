@@ -300,9 +300,8 @@ Early hardware validation is mandatory for:
 
 ## Immediate Next Step
 
-The next implementation step should build on the Milestone 0 scaffold:
+With the Milestone 0 scaffold in place, the next implementation step is to:
 
-- finish removing legacy repo leftovers from the abandoned monorepo structure
 - formalize the configuration model for MAME paths, ROM roots, media roots, and calibration values
 - formalize the curation model that separates imported machines from cabinet-visible library entries
 - carry those schema boundaries into the Rust command surface for later integration
