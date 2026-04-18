@@ -1,60 +1,142 @@
-import type { BrowseView, BrowseViewId, GameRecord } from "./types";
+import type {
+  BrowseViewId,
+  GameRecord,
+  ImportedGameRecord,
+  LibraryEntryRecord,
+  RecentGameRecord,
+} from "./types";
 
-export const browseViews: BrowseView[] = [
-  { id: "favorites", label: "Favorites", description: "Cabinet keepers" },
-  { id: "recent", label: "Recent", description: "Last touched" },
-  { id: "genre", label: "Genre", description: "Sorted by genre" },
-  { id: "year", label: "Year", description: "Sorted by release" },
-  { id: "manufacturer", label: "Maker", description: "Sorted by studio" },
+type MockCatalogSeed = {
+  machineName: string;
+  title: string;
+  year: number;
+  manufacturer: string;
+  genre: string;
+  attractCaption?: string;
+  isFavorite?: boolean;
+  wasRecentlyPlayed?: boolean;
+};
+
+const rawCatalog: MockCatalogSeed[] = [
+  { machineName: "1942", title: "1942", year: 1984, manufacturer: "Capcom", genre: "Vertical Shooter" },
+  { machineName: "asteroid", title: "Asteroids", year: 1979, manufacturer: "Atari", genre: "Vector Shooter", isFavorite: true, attractCaption: "Rock the vectors. Hold the center." },
+  { machineName: "bzone", title: "Battlezone", year: 1980, manufacturer: "Atari", genre: "Vector Tank" },
+  { machineName: "berzerk", title: "Berzerk", year: 1980, manufacturer: "Stern", genre: "Maze Shooter" },
+  { machineName: "bublbobl", title: "Bubble Bobble", year: 1986, manufacturer: "Taito", genre: "Platform", isFavorite: true, attractCaption: "Bubble the dragons. Clear the room." },
+  { machineName: "btime", title: "Burger Time", year: 1982, manufacturer: "Data East", genre: "Action" },
+  { machineName: "centiped", title: "Centipede", year: 1980, manufacturer: "Atari", genre: "Fixed Shooter", wasRecentlyPlayed: true },
+  { machineName: "defender", title: "Defender", year: 1981, manufacturer: "Williams", genre: "Side Shooter" },
+  { machineName: "digdug", title: "Dig Dug", year: 1982, manufacturer: "Namco", genre: "Action", isFavorite: true },
+  { machineName: "dkong", title: "Donkey Kong", year: 1981, manufacturer: "Nintendo", genre: "Platform", isFavorite: true, wasRecentlyPlayed: true, attractCaption: "Climb the girders. Save the Pauline." },
+  { machineName: "dkong3", title: "Donkey Kong 3", year: 1983, manufacturer: "Nintendo", genre: "Platform Shooter" },
+  { machineName: "dkongjr", title: "Donkey Kong Jr.", year: 1982, manufacturer: "Nintendo", genre: "Platform", wasRecentlyPlayed: true },
+  { machineName: "ddragon", title: "Double Dragon", year: 1987, manufacturer: "Technos", genre: "Beat 'em Up" },
+  { machineName: "dlair", title: "Dragon's Lair", year: 1983, manufacturer: "Cinematronics", genre: "Laserdisc" },
+  { machineName: "frogger", title: "Frogger", year: 1981, manufacturer: "Konami", genre: "Action", isFavorite: true, attractCaption: "Cross the road. Mind the log." },
+  { machineName: "galaga", title: "Galaga", year: 1981, manufacturer: "Namco", genre: "Fixed Shooter", isFavorite: true, wasRecentlyPlayed: true, attractCaption: "Bait the tractor beam." },
+  { machineName: "galaxian", title: "Galaxian", year: 1979, manufacturer: "Namco", genre: "Fixed Shooter" },
+  { machineName: "gauntlet", title: "Gauntlet", year: 1985, manufacturer: "Atari", genre: "Dungeon", attractCaption: "Elf needs food badly." },
+  { machineName: "gyruss", title: "Gyruss", year: 1983, manufacturer: "Konami", genre: "Tube Shooter" },
+  { machineName: "joust", title: "Joust", year: 1982, manufacturer: "Williams", genre: "Platform Combat", wasRecentlyPlayed: true },
+  { machineName: "jrpacman", title: "Jr. Pac-Man", year: 1983, manufacturer: "Midway", genre: "Maze" },
+  { machineName: "kungfum", title: "Kung-Fu Master", year: 1984, manufacturer: "Irem", genre: "Beat 'em Up" },
+  { machineName: "marble", title: "Marble Madness", year: 1984, manufacturer: "Atari", genre: "Maze" },
+  { machineName: "mrdo", title: "Mr. Do!", year: 1982, manufacturer: "Universal", genre: "Maze" },
+  { machineName: "mspacman", title: "Ms. Pac-Man", year: 1982, manufacturer: "Midway", genre: "Maze", isFavorite: true, attractCaption: "Corner routes and tunnel escapes." },
+  { machineName: "pacman", title: "Pac-Man", year: 1980, manufacturer: "Midway", genre: "Maze", isFavorite: true, wasRecentlyPlayed: true },
+  { machineName: "paperboy", title: "Paperboy", year: 1985, manufacturer: "Atari", genre: "Action" },
+  { machineName: "pengo", title: "Pengo", year: 1982, manufacturer: "Sega", genre: "Maze" },
+  { machineName: "polepos", title: "Pole Position", year: 1982, manufacturer: "Namco", genre: "Racing" },
+  { machineName: "qbert", title: "Q*bert", year: 1982, manufacturer: "Gottlieb", genre: "Action", attractCaption: "Hop the cubes. Dodge the snake." },
+  { machineName: "rallyx", title: "Rally-X", year: 1980, manufacturer: "Namco", genre: "Racing" },
+  { machineName: "robotron", title: "Robotron: 2084", year: 1982, manufacturer: "Williams", genre: "Arena Shooter", isFavorite: true, attractCaption: "Save the last human family." },
+  { machineName: "invaders", title: "Space Invaders", year: 1978, manufacturer: "Taito", genre: "Fixed Shooter", isFavorite: true },
+  { machineName: "spyhunt", title: "Spy Hunter", year: 1983, manufacturer: "Bally Midway", genre: "Racing", wasRecentlyPlayed: true },
+  { machineName: "starwars", title: "Star Wars", year: 1983, manufacturer: "Atari", genre: "Vector Shooter" },
+  { machineName: "tapper", title: "Tapper", year: 1983, manufacturer: "Bally Midway", genre: "Action" },
+  { machineName: "tempest", title: "Tempest", year: 1981, manufacturer: "Atari", genre: "Tube Shooter", isFavorite: true },
+  { machineName: "timeplt", title: "Time Pilot", year: 1982, manufacturer: "Konami", genre: "Shooter" },
+  { machineName: "tron", title: "Tron", year: 1982, manufacturer: "Bally Midway", genre: "Action" },
+  { machineName: "tutankhm", title: "Tutankham", year: 1982, manufacturer: "Konami", genre: "Maze" },
+  { machineName: "xevious", title: "Xevious", year: 1982, manufacturer: "Namco", genre: "Vertical Shooter" },
+  { machineName: "zaxxon", title: "Zaxxon", year: 1982, manufacturer: "Sega", genre: "Isometric Shooter" },
 ];
 
-export const mockGames: GameRecord[] = [
-  { id: "1942", title: "1942", machineName: "1942", year: 1984, manufacturer: "Capcom", genre: "Vertical Shooter" },
-  { id: "asteroid", title: "Asteroids", machineName: "asteroid", year: 1979, manufacturer: "Atari", genre: "Vector Shooter", isFavorite: true, attractCaption: "Rock the vectors. Hold the center." },
-  { id: "bzone", title: "Battlezone", machineName: "bzone", year: 1980, manufacturer: "Atari", genre: "Vector Tank" },
-  { id: "berzerk", title: "Berzerk", machineName: "berzerk", year: 1980, manufacturer: "Stern", genre: "Maze Shooter" },
-  { id: "bublbobl", title: "Bubble Bobble", machineName: "bublbobl", year: 1986, manufacturer: "Taito", genre: "Platform", isFavorite: true, attractCaption: "Bubble the dragons. Clear the room." },
-  { id: "btime", title: "Burger Time", machineName: "btime", year: 1982, manufacturer: "Data East", genre: "Action" },
-  { id: "centiped", title: "Centipede", machineName: "centiped", year: 1980, manufacturer: "Atari", genre: "Fixed Shooter", wasRecentlyPlayed: true },
-  { id: "defender", title: "Defender", machineName: "defender", year: 1981, manufacturer: "Williams", genre: "Side Shooter" },
-  { id: "digdug", title: "Dig Dug", machineName: "digdug", year: 1982, manufacturer: "Namco", genre: "Action", isFavorite: true },
-  { id: "dkong", title: "Donkey Kong", machineName: "dkong", year: 1981, manufacturer: "Nintendo", genre: "Platform", isFavorite: true, wasRecentlyPlayed: true, attractCaption: "Climb the girders. Save the Pauline." },
-  { id: "dkong3", title: "Donkey Kong 3", machineName: "dkong3", year: 1983, manufacturer: "Nintendo", genre: "Platform Shooter" },
-  { id: "dkongjr", title: "Donkey Kong Jr.", machineName: "dkongjr", year: 1982, manufacturer: "Nintendo", genre: "Platform", wasRecentlyPlayed: true },
-  { id: "ddragon", title: "Double Dragon", machineName: "ddragon", year: 1987, manufacturer: "Technos", genre: "Beat 'em Up" },
-  { id: "dlair", title: "Dragon's Lair", machineName: "dlair", year: 1983, manufacturer: "Cinematronics", genre: "Laserdisc" },
-  { id: "frogger", title: "Frogger", machineName: "frogger", year: 1981, manufacturer: "Konami", genre: "Action", isFavorite: true, attractCaption: "Cross the road. Mind the log." },
-  { id: "galaga", title: "Galaga", machineName: "galaga", year: 1981, manufacturer: "Namco", genre: "Fixed Shooter", isFavorite: true, wasRecentlyPlayed: true, attractCaption: "Bait the tractor beam." },
-  { id: "galaxian", title: "Galaxian", machineName: "galaxian", year: 1979, manufacturer: "Namco", genre: "Fixed Shooter" },
-  { id: "gauntlet", title: "Gauntlet", machineName: "gauntlet", year: 1985, manufacturer: "Atari", genre: "Dungeon", attractCaption: "Elf needs food badly." },
-  { id: "gyruss", title: "Gyruss", machineName: "gyruss", year: 1983, manufacturer: "Konami", genre: "Tube Shooter" },
-  { id: "joust", title: "Joust", machineName: "joust", year: 1982, manufacturer: "Williams", genre: "Platform Combat", wasRecentlyPlayed: true },
-  { id: "jrpacman", title: "Jr. Pac-Man", machineName: "jrpacman", year: 1983, manufacturer: "Midway", genre: "Maze" },
-  { id: "kungfum", title: "Kung-Fu Master", machineName: "kungfum", year: 1984, manufacturer: "Irem", genre: "Beat 'em Up" },
-  { id: "marble", title: "Marble Madness", machineName: "marble", year: 1984, manufacturer: "Atari", genre: "Maze" },
-  { id: "mrdo", title: "Mr. Do!", machineName: "mrdo", year: 1982, manufacturer: "Universal", genre: "Maze" },
-  { id: "mspacman", title: "Ms. Pac-Man", machineName: "mspacman", year: 1982, manufacturer: "Midway", genre: "Maze", isFavorite: true, attractCaption: "Corner routes and tunnel escapes." },
-  { id: "pacman", title: "Pac-Man", machineName: "pacman", year: 1980, manufacturer: "Midway", genre: "Maze", isFavorite: true, wasRecentlyPlayed: true },
-  { id: "paperboy", title: "Paperboy", machineName: "paperboy", year: 1985, manufacturer: "Atari", genre: "Action" },
-  { id: "pengo", title: "Pengo", machineName: "pengo", year: 1982, manufacturer: "Sega", genre: "Maze" },
-  { id: "polepos", title: "Pole Position", machineName: "polepos", year: 1982, manufacturer: "Namco", genre: "Racing" },
-  { id: "qbert", title: "Q*bert", machineName: "qbert", year: 1982, manufacturer: "Gottlieb", genre: "Action", attractCaption: "Hop the cubes. Dodge the snake." },
-  { id: "rallyx", title: "Rally-X", machineName: "rallyx", year: 1980, manufacturer: "Namco", genre: "Racing" },
-  { id: "robotron", title: "Robotron: 2084", machineName: "robotron", year: 1982, manufacturer: "Williams", genre: "Arena Shooter", isFavorite: true, attractCaption: "Save the last human family." },
-  { id: "invaders", title: "Space Invaders", machineName: "invaders", year: 1978, manufacturer: "Taito", genre: "Fixed Shooter", isFavorite: true },
-  { id: "spyhunt", title: "Spy Hunter", machineName: "spyhunt", year: 1983, manufacturer: "Bally Midway", genre: "Racing", wasRecentlyPlayed: true },
-  { id: "starwars", title: "Star Wars", machineName: "starwars", year: 1983, manufacturer: "Atari", genre: "Vector Shooter" },
-  { id: "tapper", title: "Tapper", machineName: "tapper", year: 1983, manufacturer: "Bally Midway", genre: "Action" },
-  { id: "tempest", title: "Tempest", machineName: "tempest", year: 1981, manufacturer: "Atari", genre: "Tube Shooter", isFavorite: true },
-  { id: "timeplt", title: "Time Pilot", machineName: "timeplt", year: 1982, manufacturer: "Konami", genre: "Shooter" },
-  { id: "tron", title: "Tron", machineName: "tron", year: 1982, manufacturer: "Bally Midway", genre: "Action" },
-  { id: "tutankhm", title: "Tutankham", machineName: "tutankhm", year: 1982, manufacturer: "Konami", genre: "Maze" },
-  { id: "xevious", title: "Xevious", machineName: "xevious", year: 1982, manufacturer: "Namco", genre: "Vertical Shooter" },
-  { id: "zaxxon", title: "Zaxxon", machineName: "zaxxon", year: 1982, manufacturer: "Sega", genre: "Isometric Shooter" },
-];
+export const mockImportedGames: ImportedGameRecord[] = rawCatalog.map((game) => ({
+  machineName: game.machineName,
+  title: game.title,
+  year: game.year,
+  manufacturer: game.manufacturer,
+  genre: game.genre,
+  romAvailable: true,
+  videoPath: game.attractCaption
+    ? `media/previews/${game.machineName}.mp4`
+    : undefined,
+  artworkPaths: game.attractCaption
+    ? [`media/artwork/${game.machineName}.png`]
+    : [],
+  attractCaption: game.attractCaption,
+}));
+
+export const mockLibraryEntries: LibraryEntryRecord[] = rawCatalog.map(
+  (game, index) => ({
+    machineName: game.machineName,
+    isVisible: true,
+    isFavorite: Boolean(game.isFavorite),
+    browseSortOrder: index,
+    attractSortOrder: index,
+    includeInAttractMode: true,
+  }),
+);
+
+export const mockRecentGames: RecentGameRecord[] = rawCatalog
+  .filter((game) => game.wasRecentlyPlayed)
+  .map((game, index) => ({
+    machineName: game.machineName,
+    lastPlayedAt: new Date(Date.UTC(2026, 3, 18, 0, index)).toISOString(),
+  }));
 
 function compareByTitle(left: GameRecord, right: GameRecord) {
   return left.title.localeCompare(right.title);
+}
+
+export function buildGameRecords(
+  importedGames: ImportedGameRecord[],
+  libraryEntries: LibraryEntryRecord[],
+  recentGames: RecentGameRecord[],
+): GameRecord[] {
+  const libraryByMachine = new Map(
+    libraryEntries.map((entry) => [entry.machineName, entry]),
+  );
+  const recentByMachine = new Set(
+    recentGames.map((recentGame) => recentGame.machineName),
+  );
+
+  return importedGames
+    .flatMap((game) => {
+      const libraryEntry = libraryByMachine.get(game.machineName);
+      if (!libraryEntry?.isVisible) return [];
+
+      return [
+        {
+          id: game.machineName,
+          ...game,
+          isFavorite: libraryEntry.isFavorite,
+          wasRecentlyPlayed: recentByMachine.has(game.machineName),
+        },
+      ];
+    })
+    .sort((left, right) => {
+      const leftOrder =
+        libraryByMachine.get(left.machineName)?.browseSortOrder ??
+        Number.MAX_SAFE_INTEGER;
+      const rightOrder =
+        libraryByMachine.get(right.machineName)?.browseSortOrder ??
+        Number.MAX_SAFE_INTEGER;
+      return leftOrder === rightOrder
+        ? compareByTitle(left, right)
+        : leftOrder - rightOrder;
+    });
 }
 
 export function getGamesForView(

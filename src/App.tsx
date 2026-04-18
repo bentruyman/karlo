@@ -15,12 +15,29 @@ import {
   TITLE_BUCKETS,
   wrapIndex,
 } from "./app/browse";
-import { browseViews, getGamesForView, mockGames } from "./app/mock-data";
-import type { BrowseViewId, GameRecord } from "./app/types";
+import {
+  DEFAULT_FRONTEND_BOOTSTRAP,
+  loadCabinetConfig,
+  loadFrontendBootstrap,
+  saveCabinetConfig,
+} from "./app/bootstrap";
+import {
+  cabinetConfigToDraft,
+  parseCabinetConfigDraft,
+  type CabinetConfigDraft,
+} from "./app/cabinet-config";
+import {
+  buildGameRecords,
+  getGamesForView,
+  mockImportedGames,
+  mockLibraryEntries,
+  mockRecentGames,
+} from "./app/mock-data";
+import type { BrowseView, BrowseViewId, CabinetConfig, GameRecord } from "./app/types";
 
-const ATTRACT_MODE_TIMEOUT_MS = 12_000;
 const ATTRACT_MODE_STEP_MS = 3_600;
 const VISIBLE_ROWS = 14;
+const SERVICE_CODE_WINDOW_MS = 1_400;
 const HANDLED_KEYS = new Set([
   "arrowup",
   "arrowdown",
@@ -35,21 +52,49 @@ const HANDLED_KEYS = new Set([
   "v",
   "b",
   "5",
+  "escape",
 ]);
 
 export default function App() {
-  const [games, setGames] = useState(mockGames);
-  const [viewIndex, setViewIndex] = useState(0);
+  const [bootstrap, setBootstrap] = useState(DEFAULT_FRONTEND_BOOTSTRAP);
+  const [importedGames] = useState(mockImportedGames);
+  const [libraryEntries, setLibraryEntries] = useState(mockLibraryEntries);
+  const [recentGames] = useState(mockRecentGames);
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [settingsSection, setSettingsSection] =
+    useState<ServiceSectionId>("launch");
+  const [settingsDraft, setSettingsDraft] = useState<CabinetConfigDraft>(() =>
+    cabinetConfigToDraft(DEFAULT_FRONTEND_BOOTSTRAP.cabinetConfig),
+  );
+  const [settingsStatus, setSettingsStatus] =
+    useState<ServiceMenuStatus>("idle");
+  const [viewIndex, setViewIndex] = useState(() =>
+    Math.max(
+      DEFAULT_FRONTEND_BOOTSTRAP.curation.browseViews.findIndex(
+        (view) => view.id === DEFAULT_FRONTEND_BOOTSTRAP.defaultView,
+      ),
+      0,
+    ),
+  );
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [isAttractMode, setIsAttractMode] = useState(false);
   const lastInteractionAtRef = useRef(Date.now());
+  const serviceCodePressesRef = useRef<number[]>([]);
 
-  const activeView = browseViews[viewIndex];
+  const browseViews = bootstrap.curation.browseViews;
+  const games = useMemo(
+    () => buildGameRecords(importedGames, libraryEntries, recentGames),
+    [importedGames, libraryEntries, recentGames],
+  );
+  const activeView =
+    browseViews[viewIndex] ?? DEFAULT_FRONTEND_BOOTSTRAP.curation.browseViews[0];
   const visibleState = useMemo(
     () => getGamesForView(activeView.id, games),
     [activeView.id, games],
   );
   const visibleGames = visibleState.games;
+  const attractTimeoutMs = bootstrap.cabinetConfig.attractTimeoutSeconds * 1_000;
+  const displayCalibration = bootstrap.cabinetConfig.displayCalibration;
 
   const bucketsPresent = useMemo(() => {
     const present = new Set<string>();
@@ -58,11 +103,28 @@ export default function App() {
   }, [visibleGames]);
 
   useEffect(() => {
+    let cancelled = false;
+
+    void loadFrontendBootstrap().then((nextBootstrap) => {
+      if (!cancelled) setBootstrap(nextBootstrap);
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    setViewIndex((current) => clampIndex(current, browseViews.length));
+  }, [browseViews.length]);
+
+  useEffect(() => {
     setSelectedIndex((current) => clampIndex(current, visibleGames.length));
   }, [visibleGames.length]);
 
   const activeSelectedIndex = clampIndex(selectedIndex, visibleGames.length);
   const selectedGame = visibleGames[activeSelectedIndex] ?? visibleGames[0];
+  const activeCabinetConfig = bootstrap.cabinetConfig;
 
   function noteInteraction() {
     lastInteractionAtRef.current = Date.now();
@@ -110,15 +172,109 @@ export default function App() {
     const gameId = selectedGame?.id;
     if (!gameId) return;
 
-    setGames((current) =>
-      current.map((g) =>
-        g.id === gameId ? { ...g, isFavorite: !g.isFavorite } : g,
+    setLibraryEntries((current) =>
+      current.map((entry) =>
+        entry.machineName === gameId
+          ? { ...entry, isFavorite: !entry.isFavorite }
+          : entry,
       ),
     );
   }
 
+  const openSettings = useEffectEvent(async () => {
+    noteInteraction();
+    setIsAttractMode(false);
+    setSettingsStatus("idle");
+    setSettingsSection("launch");
+    setIsSettingsOpen(true);
+
+    const cabinetConfig = await loadCabinetConfig();
+    setBootstrap((current) => ({ ...current, cabinetConfig }));
+    setSettingsDraft(cabinetConfigToDraft(cabinetConfig));
+  });
+
+  function closeSettings() {
+    setIsSettingsOpen(false);
+    setSettingsStatus("idle");
+  }
+
+  function resetSettingsDraft() {
+    setSettingsDraft(cabinetConfigToDraft(DEFAULT_FRONTEND_BOOTSTRAP.cabinetConfig));
+    setSettingsStatus("idle");
+  }
+
+  const commitSettings = useEffectEvent(async () => {
+    const parsed = parseCabinetConfigDraft(settingsDraft, activeCabinetConfig);
+    if (!parsed.ok) {
+      setSettingsStatus({ kind: "error", message: parsed.message });
+      return;
+    }
+
+    setSettingsStatus("saving");
+
+    try {
+      const savedConfig = await saveCabinetConfig(parsed.value);
+      setBootstrap((current) => ({ ...current, cabinetConfig: savedConfig }));
+      setSettingsDraft(cabinetConfigToDraft(savedConfig));
+      setSettingsStatus({
+        kind: "saved",
+        message: "Cabinet settings saved to SQLite.",
+      });
+    } catch (error) {
+      setSettingsStatus({
+        kind: "error",
+        message:
+          error instanceof Error
+            ? error.message
+            : "Could not save cabinet settings.",
+      });
+    }
+  });
+
+  function registerServiceCodePress() {
+    const now = Date.now();
+    const recent = serviceCodePressesRef.current.filter(
+      (timestamp) => now - timestamp <= SERVICE_CODE_WINDOW_MS,
+    );
+    recent.push(now);
+    serviceCodePressesRef.current = recent;
+
+    return recent.length >= 3;
+  }
+
   const handleKeyDown = useEffectEvent((event: KeyboardEvent) => {
     const key = event.key.toLowerCase();
+    const target = event.target;
+    const isEditableTarget =
+      target instanceof HTMLElement &&
+      (target.tagName === "INPUT" ||
+        target.tagName === "TEXTAREA" ||
+        target.tagName === "SELECT" ||
+        target.isContentEditable);
+
+    if (isSettingsOpen) {
+      if (key === "escape") {
+        event.preventDefault();
+        closeSettings();
+        return;
+      }
+
+      if ((event.metaKey || event.ctrlKey) && key === "s") {
+        event.preventDefault();
+        void commitSettings();
+        return;
+      }
+
+      if (isEditableTarget) return;
+      return;
+    }
+
+    if (key === "5" && registerServiceCodePress()) {
+      event.preventDefault();
+      void openSettings();
+      return;
+    }
+
     if (!HANDLED_KEYS.has(key)) return;
 
     switch (key) {
@@ -179,20 +335,21 @@ export default function App() {
 
   useEffect(() => {
     const id = window.setInterval(() => {
-      if (Date.now() - lastInteractionAtRef.current >= ATTRACT_MODE_TIMEOUT_MS) {
+      if (isSettingsOpen) return;
+      if (Date.now() - lastInteractionAtRef.current >= attractTimeoutMs) {
         setIsAttractMode(true);
       }
     }, 1_000);
     return () => window.clearInterval(id);
-  }, []);
+  }, [attractTimeoutMs, isSettingsOpen]);
 
   useEffect(() => {
-    if (!isAttractMode || visibleGames.length <= 1) return;
+    if (!isAttractMode || isSettingsOpen || visibleGames.length <= 1) return;
     const id = window.setInterval(() => {
       setSelectedIndex((current) => wrapIndex(current + 1, visibleGames.length));
     }, ATTRACT_MODE_STEP_MS);
     return () => window.clearInterval(id);
-  }, [isAttractMode, visibleGames.length]);
+  }, [isAttractMode, isSettingsOpen, visibleGames.length]);
 
   if (!selectedGame) return null;
 
@@ -200,19 +357,29 @@ export default function App() {
 
   return (
     <div
-      className="h-screen w-screen bg-black grid place-items-center overflow-hidden text-cab-ink"
+      className="isolate grid h-screen w-screen place-items-center overflow-hidden bg-black text-cab-ink antialiased"
       data-attract={isAttractMode || undefined}
     >
       <div
         className="relative bg-black"
+        data-display-profile={bootstrap.cabinetConfig.displayProfile}
         style={{
           width: "min(100vw, calc(100vh * 4 / 3))",
           height: "min(100vh, calc(100vw * 3 / 4))",
           containerType: "size",
         }}
       >
-        <div className="absolute inset-[5%] grid grid-rows-[auto_1fr_auto] gap-[2.4cqh]">
+        <div
+          className="absolute grid grid-rows-[auto_1fr_auto] gap-[2.4cqh]"
+          style={{
+            top: `${displayCalibration.topInsetPercent}%`,
+            right: `${displayCalibration.rightInsetPercent}%`,
+            bottom: `${displayCalibration.bottomInsetPercent}%`,
+            left: `${displayCalibration.leftInsetPercent}%`,
+          }}
+        >
           <ModeBar
+            browseViews={browseViews}
             activeIndex={viewIndex}
             onSelect={jumpToView}
           />
@@ -232,15 +399,42 @@ export default function App() {
 
           <ControlHints />
         </div>
+
+        {isSettingsOpen && (
+          <ServiceMenu
+            cabinetConfig={activeCabinetConfig}
+            settingsDraft={settingsDraft}
+            settingsSection={settingsSection}
+            status={settingsStatus}
+            onClose={closeSettings}
+            onReset={resetSettingsDraft}
+            onSave={() => void commitSettings()}
+            onSectionChange={setSettingsSection}
+            onChange={(field, value) => {
+              setSettingsDraft((current) => ({ ...current, [field]: value }));
+              setSettingsStatus("idle");
+            }}
+          />
+        )}
       </div>
     </div>
   );
 }
 
+type ServiceSectionId = "launch" | "media" | "display" | "storage";
+
+type ServiceMenuStatus =
+  | "idle"
+  | "saving"
+  | { kind: "saved"; message: string }
+  | { kind: "error"; message: string };
+
 function ModeBar({
+  browseViews,
   activeIndex,
   onSelect,
 }: {
+  browseViews: BrowseView[];
   activeIndex: number;
   onSelect: (id: BrowseViewId) => void;
 }) {
@@ -544,6 +738,528 @@ function ControlHints() {
           )}
         </span>
       ))}
+    </div>
+  );
+}
+
+function ServiceMenu({
+  cabinetConfig,
+  settingsDraft,
+  settingsSection,
+  status,
+  onClose,
+  onReset,
+  onSave,
+  onSectionChange,
+  onChange,
+}: {
+  cabinetConfig: CabinetConfig;
+  settingsDraft: CabinetConfigDraft;
+  settingsSection: ServiceSectionId;
+  status: ServiceMenuStatus;
+  onClose: () => void;
+  onReset: () => void;
+  onSave: () => void;
+  onSectionChange: (section: ServiceSectionId) => void;
+  onChange: (field: keyof CabinetConfigDraft, value: string) => void;
+}) {
+  const sections: Array<{
+    id: ServiceSectionId;
+    label: string;
+    detail: string;
+  }> = [
+    { id: "launch", label: "Launch", detail: "MAME runtime paths" },
+    { id: "media", label: "Library", detail: "ROM and media scan roots" },
+    { id: "display", label: "Display", detail: "CRT timing and safe area" },
+    { id: "storage", label: "Storage", detail: "SQLite boundary summary" },
+  ];
+
+  const statusBadge =
+    status === "idle"
+      ? { label: "Ready", tone: "var(--color-cab-mute)" }
+      : status === "saving"
+        ? { label: "Saving", tone: "var(--color-cab-accent)" }
+        : {
+            label: status.kind === "saved" ? "Saved" : "Error",
+            tone:
+              status.kind === "saved"
+                ? "var(--color-cab-ok)"
+                : "var(--color-cab-danger)",
+          };
+
+  return (
+    <div className="absolute inset-0 z-20 bg-[linear-gradient(180deg,rgba(3,5,9,0.72),rgba(0,0,0,0.94))]">
+      <div className="absolute inset-[3.2%] overflow-hidden border-[0.4cqh] border-cab-rule bg-[#05070b]/96">
+        <div
+          aria-hidden
+          className="absolute inset-0 opacity-60"
+          style={{
+            background:
+              "linear-gradient(90deg, transparent 0%, rgba(248,216,79,0.08) 48%, transparent 100%), repeating-linear-gradient(180deg, rgba(255,255,255,0.03) 0, rgba(255,255,255,0.03) 1px, transparent 1px, transparent 7px)",
+          }}
+        />
+
+        <div className="relative grid h-full grid-rows-[auto_1fr_auto] gap-[2.2cqh] px-[2.6cqw] py-[2.6cqh]">
+          <div className="flex items-start justify-between gap-[2cqw] border-b-[0.4cqh] border-cab-rule pb-[1.8cqh]">
+            <div className="flex flex-col gap-[1cqh]">
+              <div
+                className="font-display tracking-[0.3em] text-cab-accent"
+                style={{ fontSize: "1.9cqh" }}
+              >
+                SERVICE MODE
+              </div>
+              <div className="flex flex-col gap-[0.8cqh]">
+                <h2
+                  className="font-display text-cab-ink"
+                  style={{ fontSize: "5.2cqh" }}
+                >
+                  HIDDEN CABINET SETTINGS
+                </h2>
+                <p
+                  className="max-w-[74ch] font-sans text-cab-mute"
+                  style={{ fontSize: "2.1cqh", lineHeight: 1.25 }}
+                >
+                  Launcher paths, scan roots, attract timing, and CRT safe-area
+                  values now persist through the Rust-owned SQLite settings
+                  store. Triple <strong>COIN</strong> opens this panel.
+                </p>
+              </div>
+            </div>
+
+            <div className="flex flex-col items-end gap-[1.1cqh]">
+              <div
+                className="rounded-full border-[0.28cqh] px-[1.2cqw] py-[0.55cqh] font-display tracking-[0.22em]"
+                style={{
+                  fontSize: "1.8cqh",
+                  color: statusBadge.tone,
+                  borderColor: statusBadge.tone,
+                }}
+              >
+                {statusBadge.label}
+              </div>
+              <button
+                type="button"
+                onClick={onClose}
+                className="rounded-none bg-transparent px-[1.2cqw] py-[0.7cqh] font-display text-cab-mute ring-1 ring-cab-rule"
+                style={{ fontSize: "1.9cqh" }}
+              >
+                CLOSE
+              </button>
+            </div>
+          </div>
+
+          <div className="grid min-h-0 grid-cols-[13fr_29fr] gap-[2.4cqw]">
+            <aside className="flex min-h-0 flex-col gap-[1.2cqh] border-r-[0.4cqh] border-cab-rule pr-[1.7cqw]">
+              <ul role="list" className="flex flex-col gap-[0.8cqh]">
+                {sections.map((section, index) => {
+                  const isActive = section.id === settingsSection;
+                  return (
+                    <li key={section.id}>
+                      <button
+                        type="button"
+                        onClick={() => onSectionChange(section.id)}
+                        className="w-full rounded-none px-[1.2cqw] py-[1.15cqh] text-left ring-1 ring-cab-rule"
+                        style={{
+                          background: isActive
+                            ? "linear-gradient(90deg, rgba(248,216,79,0.16), rgba(248,216,79,0.03))"
+                            : "rgba(255,255,255,0.02)",
+                        }}
+                      >
+                        <div
+                          className="font-display text-cab-ink"
+                          style={{ fontSize: "2.5cqh" }}
+                        >
+                          {String(index + 1).padStart(2, "0")} {section.label}
+                        </div>
+                        <div
+                          className="font-sans text-cab-mute"
+                          style={{ fontSize: "1.8cqh", lineHeight: 1.2 }}
+                        >
+                          {section.detail}
+                        </div>
+                      </button>
+                    </li>
+                  );
+                })}
+              </ul>
+
+              <div className="mt-auto rounded-none bg-[#0a0e14] px-[1.2cqw] py-[1.2cqh] ring-1 ring-cab-rule">
+                <div
+                  className="font-display text-cab-ink"
+                  style={{ fontSize: "2.1cqh" }}
+                >
+                  SERVICE CODE
+                </div>
+                <div
+                  className="mt-[0.6cqh] font-sans text-cab-mute"
+                  style={{ fontSize: "1.8cqh", lineHeight: 1.25 }}
+                >
+                  Tap <span className="text-cab-ink">5</span> three times from the
+                  browse screen. Press <span className="text-cab-ink">Esc</span>{" "}
+                  to back out.
+                </div>
+              </div>
+            </aside>
+
+            <section className="min-h-0 overflow-y-auto pr-[0.6cqw]">
+              {settingsSection === "launch" && (
+                <SettingsSection
+                  title="Launch Runtime"
+                  subtitle="Define where Karlo finds MAME and how the cabinet runtime boots."
+                >
+                  <FieldGroup>
+                    <TextInputField
+                      id="mameExecutablePath"
+                      label="MAME executable path"
+                      name="mameExecutablePath"
+                      value={settingsDraft.mameExecutablePath}
+                      placeholder="/usr/local/bin/mame"
+                      onChange={(value) => onChange("mameExecutablePath", value)}
+                    />
+                    <TextInputField
+                      id="mameIniPath"
+                      label="Optional mame.ini path"
+                      name="mameIniPath"
+                      value={settingsDraft.mameIniPath}
+                      placeholder="/etc/mame.ini"
+                      onChange={(value) => onChange("mameIniPath", value)}
+                    />
+                  </FieldGroup>
+                </SettingsSection>
+              )}
+
+              {settingsSection === "media" && (
+                <SettingsSection
+                  title="Library and Media Roots"
+                  subtitle="Manual scans only run against these persisted roots."
+                >
+                  <FieldGroup>
+                    <TextAreaField
+                      id="romRootsText"
+                      label="ROM roots"
+                      name="romRootsText"
+                      value={settingsDraft.romRootsText}
+                      placeholder={"/roms/main\n/roms/overflow"}
+                      onChange={(value) => onChange("romRootsText", value)}
+                    />
+                    <TextAreaField
+                      id="mediaRootsText"
+                      label="Media roots"
+                      name="mediaRootsText"
+                      value={settingsDraft.mediaRootsText}
+                      placeholder={"/media/cabinet\n/media/import"}
+                      onChange={(value) => onChange("mediaRootsText", value)}
+                    />
+                    <TextInputField
+                      id="previewVideoRoot"
+                      label="Preview video root"
+                      name="previewVideoRoot"
+                      value={settingsDraft.previewVideoRoot}
+                      placeholder="/media/cabinet/videos"
+                      onChange={(value) => onChange("previewVideoRoot", value)}
+                    />
+                    <TextInputField
+                      id="artworkRoot"
+                      label="Artwork root"
+                      name="artworkRoot"
+                      value={settingsDraft.artworkRoot}
+                      placeholder="/media/cabinet/artwork"
+                      onChange={(value) => onChange("artworkRoot", value)}
+                    />
+                  </FieldGroup>
+                </SettingsSection>
+              )}
+
+              {settingsSection === "display" && (
+                <SettingsSection
+                  title="Display and Timing"
+                  subtitle="Tune idle behavior and the current CRT safe-area offsets."
+                >
+                  <FieldGroup>
+                    <NumberInputField
+                      id="attractTimeoutSeconds"
+                      label="Attract timeout (seconds)"
+                      name="attractTimeoutSeconds"
+                      min={5}
+                      max={600}
+                      value={settingsDraft.attractTimeoutSeconds}
+                      onChange={(value) =>
+                        onChange("attractTimeoutSeconds", value)
+                      }
+                    />
+
+                    <div className="grid grid-cols-2 gap-[1.1cqw]">
+                      <NumberInputField
+                        id="topInsetPercent"
+                        label="Top inset %"
+                        name="topInsetPercent"
+                        min={0}
+                        max={25}
+                        value={settingsDraft.topInsetPercent}
+                        onChange={(value) => onChange("topInsetPercent", value)}
+                      />
+                      <NumberInputField
+                        id="rightInsetPercent"
+                        label="Right inset %"
+                        name="rightInsetPercent"
+                        min={0}
+                        max={25}
+                        value={settingsDraft.rightInsetPercent}
+                        onChange={(value) => onChange("rightInsetPercent", value)}
+                      />
+                      <NumberInputField
+                        id="bottomInsetPercent"
+                        label="Bottom inset %"
+                        name="bottomInsetPercent"
+                        min={0}
+                        max={25}
+                        value={settingsDraft.bottomInsetPercent}
+                        onChange={(value) => onChange("bottomInsetPercent", value)}
+                      />
+                      <NumberInputField
+                        id="leftInsetPercent"
+                        label="Left inset %"
+                        name="leftInsetPercent"
+                        min={0}
+                        max={25}
+                        value={settingsDraft.leftInsetPercent}
+                        onChange={(value) => onChange("leftInsetPercent", value)}
+                      />
+                    </div>
+
+                    <InfoPanel
+                      title="Active display profile"
+                      body={`${cabinetConfig.displayProfile} remains fixed at the runtime layer while overscan and safe-area values are persisted here.`}
+                    />
+                  </FieldGroup>
+                </SettingsSection>
+              )}
+
+              {settingsSection === "storage" && (
+                <SettingsSection
+                  title="Persistence Boundary"
+                  subtitle="This service surface only edits cabinet configuration, not the curated library."
+                >
+                  <div className="grid gap-[1cqh]">
+                    <StorageRow
+                      label="settings"
+                      value="Launcher paths, media roots, attract timeout, calibration"
+                    />
+                    <StorageRow
+                      label="games"
+                      value="Imported MAME truth and resolved media pointers"
+                    />
+                    <StorageRow
+                      label="library_entries"
+                      value="Cabinet-facing visibility, favorites, and browse ordering"
+                    />
+                    <StorageRow
+                      label="recent_games"
+                      value="Last-played history for launch return and recents"
+                    />
+                  </div>
+                </SettingsSection>
+              )}
+            </section>
+          </div>
+
+          <div className="grid grid-cols-[1fr_auto] items-center gap-[2cqw] border-t-[0.4cqh] border-cab-rule pt-[1.6cqh]">
+            <div
+              className="font-sans text-cab-mute"
+              style={{ fontSize: "1.9cqh", lineHeight: 1.25 }}
+            >
+              {status === "idle"
+                ? "Save writes the current draft into the Rust-owned SQLite settings table."
+                : status === "saving"
+                  ? "Persisting cabinet settings."
+                  : status.message}
+            </div>
+
+            <div className="flex items-center gap-[1cqw]">
+              <button
+                type="button"
+                onClick={onReset}
+                className="rounded-none bg-transparent px-[1.2cqw] py-[0.85cqh] font-display text-cab-mute ring-1 ring-cab-rule"
+                style={{ fontSize: "1.9cqh" }}
+              >
+                DEFAULTS
+              </button>
+              <button
+                type="button"
+                onClick={onSave}
+                className="rounded-none bg-cab-accent px-[1.4cqw] py-[0.85cqh] font-display text-black ring-1 ring-cab-accent"
+                style={{ fontSize: "2cqh" }}
+              >
+                SAVE TO SQLITE
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function SettingsSection({
+  title,
+  subtitle,
+  children,
+}: {
+  title: string;
+  subtitle: string;
+  children: ReactNode;
+}) {
+  return (
+    <div className="flex flex-col gap-[1.5cqh]">
+      <div className="flex flex-col gap-[0.6cqh]">
+        <h3 className="font-display text-cab-ink" style={{ fontSize: "4cqh" }}>
+          {title}
+        </h3>
+        <p
+          className="max-w-[68ch] font-sans text-cab-mute"
+          style={{ fontSize: "2cqh", lineHeight: 1.25 }}
+        >
+          {subtitle}
+        </p>
+      </div>
+      {children}
+    </div>
+  );
+}
+
+function FieldGroup({ children }: { children: ReactNode }) {
+  return <div className="grid gap-[1.2cqh]">{children}</div>;
+}
+
+function TextInputField({
+  id,
+  label,
+  name,
+  value,
+  placeholder,
+  onChange,
+}: {
+  id: string;
+  label: string;
+  name: string;
+  value: string;
+  placeholder: string;
+  onChange: (value: string) => void;
+}) {
+  return (
+    <label htmlFor={id} className="grid gap-[0.55cqh]">
+      <span className="font-display text-cab-ink" style={{ fontSize: "2.2cqh" }}>
+        {label}
+      </span>
+      <input
+        id={id}
+        name={name}
+        type="text"
+        value={value}
+        placeholder={placeholder}
+        onChange={(event) => onChange(event.currentTarget.value)}
+        className="w-full rounded-none bg-[#090d13] px-[1.1cqw] py-[1cqh] font-sans text-cab-ink ring-1 ring-cab-rule outline-none placeholder:text-cab-dim focus:ring-[0.35cqh] focus:ring-cab-accent/55"
+        style={{ fontSize: "2.05cqh" }}
+      />
+    </label>
+  );
+}
+
+function NumberInputField({
+  id,
+  label,
+  name,
+  value,
+  min,
+  max,
+  onChange,
+}: {
+  id: string;
+  label: string;
+  name: string;
+  value: string;
+  min: number;
+  max: number;
+  onChange: (value: string) => void;
+}) {
+  return (
+    <label htmlFor={id} className="grid gap-[0.55cqh]">
+      <span className="font-display text-cab-ink" style={{ fontSize: "2.2cqh" }}>
+        {label}
+      </span>
+      <input
+        id={id}
+        name={name}
+        type="number"
+        min={min}
+        max={max}
+        value={value}
+        onChange={(event) => onChange(event.currentTarget.value)}
+        className="w-full rounded-none bg-[#090d13] px-[1.1cqw] py-[1cqh] font-sans text-cab-ink ring-1 ring-cab-rule outline-none focus:ring-[0.35cqh] focus:ring-cab-accent/55"
+        style={{ fontSize: "2.05cqh" }}
+      />
+    </label>
+  );
+}
+
+function TextAreaField({
+  id,
+  label,
+  name,
+  value,
+  placeholder,
+  onChange,
+}: {
+  id: string;
+  label: string;
+  name: string;
+  value: string;
+  placeholder: string;
+  onChange: (value: string) => void;
+}) {
+  return (
+    <label htmlFor={id} className="grid gap-[0.55cqh]">
+      <span className="font-display text-cab-ink" style={{ fontSize: "2.2cqh" }}>
+        {label}
+      </span>
+      <textarea
+        id={id}
+        name={name}
+        value={value}
+        placeholder={placeholder}
+        onChange={(event) => onChange(event.currentTarget.value)}
+        className="min-h-[12cqh] w-full resize-none rounded-none bg-[#090d13] px-[1.1cqw] py-[1cqh] font-sans text-cab-ink ring-1 ring-cab-rule outline-none placeholder:text-cab-dim focus:ring-[0.35cqh] focus:ring-cab-accent/55"
+        style={{ fontSize: "2.05cqh", lineHeight: 1.25 }}
+      />
+    </label>
+  );
+}
+
+function InfoPanel({ title, body }: { title: string; body: string }) {
+  return (
+    <div className="bg-[#0a0e14] px-[1.2cqw] py-[1.1cqh] ring-1 ring-cab-rule">
+      <div className="font-display text-cab-ink" style={{ fontSize: "2.15cqh" }}>
+        {title}
+      </div>
+      <p
+        className="mt-[0.6cqh] max-w-[66ch] font-sans text-cab-mute"
+        style={{ fontSize: "1.95cqh", lineHeight: 1.25 }}
+      >
+        {body}
+      </p>
+    </div>
+  );
+}
+
+function StorageRow({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="grid grid-cols-[12fr_28fr] gap-[1.2cqw] bg-[#0a0e14] px-[1.2cqw] py-[1.05cqh] ring-1 ring-cab-rule">
+      <div className="font-display text-cab-accent" style={{ fontSize: "2.05cqh" }}>
+        {label}
+      </div>
+      <div className="font-sans text-cab-mute" style={{ fontSize: "1.95cqh", lineHeight: 1.25 }}>
+        {value}
+      </div>
     </div>
   );
 }

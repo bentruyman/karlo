@@ -27,6 +27,8 @@
   --color-cab-rule: #1d232e;
   --color-cab-surface: #0b0e14;
   --color-cab-accent: #f8d84f;
+  --color-cab-ok: #89e27c;
+  --color-cab-danger: #ff6d75;
 }
 
 html,

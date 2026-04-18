@@ -1,8 +1,13 @@
 import { describe, expect, test } from "bun:test";
 
-import { getGamesForView } from "./mock-data";
+import { buildGameRecords, getGamesForView } from "./mock-data";
 import { getTitleBucket, jumpLetter, wrapIndex } from "./browse";
-import type { GameRecord } from "./types";
+import type {
+  GameRecord,
+  ImportedGameRecord,
+  LibraryEntryRecord,
+  RecentGameRecord,
+} from "./types";
 
 const sampleGames: GameRecord[] = [
   {
@@ -12,6 +17,10 @@ const sampleGames: GameRecord[] = [
     year: 1983,
     manufacturer: "Bravo",
     genre: "Maze",
+    romAvailable: true,
+    artworkPaths: [],
+    isFavorite: false,
+    wasRecentlyPlayed: false,
   },
   {
     id: "alpha",
@@ -20,6 +29,8 @@ const sampleGames: GameRecord[] = [
     year: 1981,
     manufacturer: "Acme",
     genre: "Action",
+    romAvailable: true,
+    artworkPaths: [],
     isFavorite: true,
     wasRecentlyPlayed: true,
   },
@@ -30,7 +41,10 @@ const sampleGames: GameRecord[] = [
     year: 1981,
     manufacturer: "Acme",
     genre: "Action",
+    romAvailable: true,
+    artworkPaths: [],
     isFavorite: true,
+    wasRecentlyPlayed: false,
   },
   {
     id: "bravo",
@@ -39,6 +53,9 @@ const sampleGames: GameRecord[] = [
     year: 1982,
     manufacturer: "Bravo",
     genre: "Shooter",
+    romAvailable: true,
+    artworkPaths: [],
+    isFavorite: false,
     wasRecentlyPlayed: true,
   },
 ];
@@ -51,6 +68,10 @@ const jumpGames: GameRecord[] = [
     year: 1984,
     manufacturer: "Capcom",
     genre: "Vertical Shooter",
+    romAvailable: true,
+    artworkPaths: [],
+    isFavorite: false,
+    wasRecentlyPlayed: false,
   },
   {
     id: "arkanoid",
@@ -59,6 +80,10 @@ const jumpGames: GameRecord[] = [
     year: 1986,
     manufacturer: "Taito",
     genre: "Breakout",
+    romAvailable: true,
+    artworkPaths: [],
+    isFavorite: false,
+    wasRecentlyPlayed: false,
   },
   {
     id: "asteroids",
@@ -67,6 +92,10 @@ const jumpGames: GameRecord[] = [
     year: 1979,
     manufacturer: "Atari",
     genre: "Vector Shooter",
+    romAvailable: true,
+    artworkPaths: [],
+    isFavorite: false,
+    wasRecentlyPlayed: false,
   },
   {
     id: "bubble",
@@ -75,6 +104,10 @@ const jumpGames: GameRecord[] = [
     year: 1986,
     manufacturer: "Taito",
     genre: "Platform",
+    romAvailable: true,
+    artworkPaths: [],
+    isFavorite: false,
+    wasRecentlyPlayed: false,
   },
   {
     id: "burger",
@@ -83,6 +116,10 @@ const jumpGames: GameRecord[] = [
     year: 1982,
     manufacturer: "Data East",
     genre: "Action",
+    romAvailable: true,
+    artworkPaths: [],
+    isFavorite: false,
+    wasRecentlyPlayed: false,
   },
   {
     id: "centipede",
@@ -91,12 +128,106 @@ const jumpGames: GameRecord[] = [
     year: 1980,
     manufacturer: "Atari",
     genre: "Fixed Shooter",
+    romAvailable: true,
+    artworkPaths: [],
+    isFavorite: false,
+    wasRecentlyPlayed: false,
   },
 ];
 
 function titlesFor(games: GameRecord[]) {
   return games.map((game) => game.title);
 }
+
+describe("buildGameRecords", () => {
+  test("joins imported catalog, curated library entries, and recent history", () => {
+    const importedGames: ImportedGameRecord[] = [
+      {
+        machineName: "alpha",
+        title: "Alpha",
+        year: 1981,
+        manufacturer: "Acme",
+        genre: "Action",
+        romAvailable: true,
+        artworkPaths: [],
+      },
+      {
+        machineName: "bravo",
+        title: "Bravo",
+        year: 1982,
+        manufacturer: "Acme",
+        genre: "Shooter",
+        romAvailable: true,
+        artworkPaths: [],
+      },
+      {
+        machineName: "charlie",
+        title: "Charlie",
+        year: 1983,
+        manufacturer: "Acme",
+        genre: "Maze",
+        romAvailable: true,
+        artworkPaths: [],
+      },
+    ];
+    const libraryEntries: LibraryEntryRecord[] = [
+      {
+        machineName: "bravo",
+        isVisible: true,
+        isFavorite: false,
+        browseSortOrder: 0,
+        includeInAttractMode: true,
+      },
+      {
+        machineName: "alpha",
+        isVisible: true,
+        isFavorite: true,
+        browseSortOrder: 1,
+        includeInAttractMode: true,
+      },
+      {
+        machineName: "charlie",
+        isVisible: false,
+        isFavorite: true,
+        browseSortOrder: 2,
+        includeInAttractMode: false,
+      },
+    ];
+    const recentGames: RecentGameRecord[] = [
+      {
+        machineName: "alpha",
+        lastPlayedAt: "2026-04-18T00:00:00.000Z",
+      },
+    ];
+
+    expect(buildGameRecords(importedGames, libraryEntries, recentGames)).toEqual([
+      {
+        id: "bravo",
+        machineName: "bravo",
+        title: "Bravo",
+        year: 1982,
+        manufacturer: "Acme",
+        genre: "Shooter",
+        romAvailable: true,
+        artworkPaths: [],
+        isFavorite: false,
+        wasRecentlyPlayed: false,
+      },
+      {
+        id: "alpha",
+        machineName: "alpha",
+        title: "Alpha",
+        year: 1981,
+        manufacturer: "Acme",
+        genre: "Action",
+        romAvailable: true,
+        artworkPaths: [],
+        isFavorite: true,
+        wasRecentlyPlayed: true,
+      },
+    ]);
+  });
+});
 
 describe("getGamesForView", () => {
   test("returns favorites sorted by title", () => {

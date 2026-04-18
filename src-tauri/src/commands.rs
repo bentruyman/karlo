@@ -1,15 +1,7 @@
 use serde::Serialize;
+use tauri::State;
 
-use crate::db;
-
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct FrontendBootstrap {
-    default_view: &'static str,
-    attract_timeout_seconds: u16,
-    display_target: &'static str,
-    browse_views: Vec<&'static str>,
-}
+use crate::{contract, db, store};
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -27,19 +19,31 @@ pub struct SchemaOverview {
 }
 
 #[tauri::command]
-pub fn get_frontend_bootstrap() -> FrontendBootstrap {
-    FrontendBootstrap {
-        default_view: "favorites",
-        attract_timeout_seconds: 12,
-        display_target: "crt-480i-4:3",
-        browse_views: vec![
-            "favorites",
-            "recent",
-            "genre",
-            "year",
-            "manufacturer",
-        ],
-    }
+pub fn get_frontend_bootstrap(
+    state: State<'_, store::AppState>,
+) -> Result<contract::FrontendBootstrap, String> {
+    Ok(contract::frontend_bootstrap(state.load_cabinet_config()?))
+}
+
+#[tauri::command]
+pub fn get_cabinet_config(
+    state: State<'_, store::AppState>,
+) -> Result<contract::CabinetConfig, String> {
+    state.load_cabinet_config()
+}
+
+#[tauri::command]
+pub fn save_cabinet_config(
+    cabinet_config: contract::CabinetConfig,
+    state: State<'_, store::AppState>,
+) -> Result<contract::CabinetConfig, String> {
+    state.save_cabinet_config(&cabinet_config)?;
+    state.load_cabinet_config()
+}
+
+#[tauri::command]
+pub fn get_runtime_contract() -> contract::RuntimeContract {
+    contract::runtime_contract()
 }
 
 #[tauri::command]
