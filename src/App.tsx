@@ -17,10 +17,14 @@ import {
   wrapIndex,
 } from "./app/browse";
 import {
+  DEFAULT_LIBRARY_SNAPSHOT,
   DEFAULT_FRONTEND_BOOTSTRAP,
   loadCabinetConfig,
   loadFrontendBootstrap,
+  loadLibrarySnapshot,
+  recordRecentGame,
   saveCabinetConfig,
+  toggleGameFavorite,
 } from "./app/bootstrap";
 import {
   adjustCalibrationDraft,
@@ -50,9 +54,6 @@ import {
 import {
   buildGameRecords,
   getGamesForView,
-  mockImportedGames,
-  mockLibraryEntries,
-  mockRecentGames,
 } from "./app/mock-data";
 import type { BrowseView, BrowseViewId, CabinetConfig, GameRecord } from "./app/types";
 
@@ -78,9 +79,15 @@ const HANDLED_KEYS = new Set([
 
 export default function App() {
   const [bootstrap, setBootstrap] = useState(DEFAULT_FRONTEND_BOOTSTRAP);
-  const [importedGames] = useState(mockImportedGames);
-  const [libraryEntries, setLibraryEntries] = useState(mockLibraryEntries);
-  const [recentGames] = useState(mockRecentGames);
+  const [importedGames, setImportedGames] = useState(
+    DEFAULT_LIBRARY_SNAPSHOT.importedGames,
+  );
+  const [libraryEntries, setLibraryEntries] = useState(
+    DEFAULT_LIBRARY_SNAPSHOT.libraryEntries,
+  );
+  const [recentGames, setRecentGames] = useState(
+    DEFAULT_LIBRARY_SNAPSHOT.recentGames,
+  );
   const [browseFocusZone, setBrowseFocusZone] =
     useState<BrowseFocusZone>("gameList");
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
@@ -143,9 +150,13 @@ export default function App() {
   useEffect(() => {
     let cancelled = false;
 
-    void loadFrontendBootstrap().then((nextBootstrap) => {
-      if (!cancelled) setBootstrap(nextBootstrap);
-    });
+    void Promise.all([loadFrontendBootstrap(), loadLibrarySnapshot()]).then(
+      ([nextBootstrap, librarySnapshot]) => {
+        if (cancelled) return;
+        setBootstrap(nextBootstrap);
+        applyLibrarySnapshot(librarySnapshot);
+      },
+    );
 
     return () => {
       cancelled = true;
@@ -182,6 +193,12 @@ export default function App() {
   function noteInteraction() {
     lastInteractionAtRef.current = Date.now();
     if (isAttractMode) setIsAttractMode(false);
+  }
+
+  function applyLibrarySnapshot(snapshot: typeof DEFAULT_LIBRARY_SNAPSHOT) {
+    setImportedGames(snapshot.importedGames);
+    setLibraryEntries(snapshot.libraryEntries);
+    setRecentGames(snapshot.recentGames);
   }
 
   function applyServiceFocus(nextFocus: ServiceFocusTarget) {
@@ -319,18 +336,23 @@ export default function App() {
     setSelection(jumpLetter(visibleGames, activeSelectedIndex, direction));
   }
 
-  function toggleFavorite() {
+  const toggleFavorite = useEffectEvent(async () => {
     const gameId = selectedGame?.id;
     if (!gameId) return;
 
-    setLibraryEntries((current) =>
-      current.map((entry) =>
-        entry.machineName === gameId
-          ? { ...entry, isFavorite: !entry.isFavorite }
-          : entry,
-      ),
-    );
-  }
+    try {
+      applyLibrarySnapshot(await toggleGameFavorite(gameId));
+    } catch {}
+  });
+
+  const recordSelectedGameAsRecent = useEffectEvent(async () => {
+    const gameId = selectedGame?.id;
+    if (!gameId) return;
+
+    try {
+      applyLibrarySnapshot(await recordRecentGame(gameId));
+    } catch {}
+  });
 
   const openSettings = useEffectEvent(async () => {
     noteInteraction();
@@ -615,12 +637,14 @@ export default function App() {
         noteInteraction();
         if (browseFocusZone === "modeBar") {
           setBrowseFocusZone("gameList");
+          return;
         }
+        void recordSelectedGameAsRecent();
         return;
       case "x":
         event.preventDefault();
         noteInteraction();
-        toggleFavorite();
+        void toggleFavorite();
         return;
       case "c":
       case " ":

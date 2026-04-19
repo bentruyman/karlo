@@ -4,8 +4,14 @@ import type {
   BrowseView,
   CabinetConfig,
   FrontendBootstrap,
+  LibrarySnapshot,
   RuntimeContract,
 } from "./types";
+import {
+  mockImportedGames,
+  mockLibraryEntries,
+  mockRecentGames,
+} from "./mock-data";
 
 export const DEFAULT_BROWSE_VIEWS: BrowseView[] = [
   { id: "favorites", label: "Favorites", description: "Cabinet keepers" },
@@ -113,6 +119,12 @@ export const DEFAULT_FRONTEND_BOOTSTRAP: FrontendBootstrap = {
   curation: DEFAULT_RUNTIME_CONTRACT.curation,
 };
 
+export const DEFAULT_LIBRARY_SNAPSHOT: LibrarySnapshot = {
+  importedGames: mockImportedGames,
+  libraryEntries: mockLibraryEntries,
+  recentGames: mockRecentGames,
+};
+
 export async function loadFrontendBootstrap(): Promise<FrontendBootstrap> {
   try {
     return await invoke<FrontendBootstrap>("get_frontend_bootstrap");
@@ -141,4 +153,24 @@ export async function saveCabinetConfig(
   cabinetConfig: CabinetConfig,
 ): Promise<CabinetConfig> {
   return await invoke<CabinetConfig>("save_cabinet_config", { cabinetConfig });
+}
+
+export async function loadLibrarySnapshot(): Promise<LibrarySnapshot> {
+  try {
+    return await invoke<LibrarySnapshot>("get_library_snapshot");
+  } catch {
+    return DEFAULT_LIBRARY_SNAPSHOT;
+  }
+}
+
+export async function toggleGameFavorite(
+  machineName: string,
+): Promise<LibrarySnapshot> {
+  return await invoke<LibrarySnapshot>("toggle_game_favorite", { machineName });
+}
+
+export async function recordRecentGame(
+  machineName: string,
+): Promise<LibrarySnapshot> {
+  return await invoke<LibrarySnapshot>("record_recent_game", { machineName });
 }

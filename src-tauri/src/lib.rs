@@ -1,6 +1,7 @@
 mod commands;
 mod contract;
 mod db;
+mod seed;
 mod store;
 
 use std::io;
@@ -19,8 +20,11 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             commands::get_frontend_bootstrap,
             commands::get_cabinet_config,
+            commands::get_library_snapshot,
             commands::get_runtime_contract,
+            commands::record_recent_game,
             commands::save_cabinet_config,
+            commands::toggle_game_favorite,
             commands::get_schema_overview
         ])
         .run(tauri::generate_context!())

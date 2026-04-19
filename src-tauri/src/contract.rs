@@ -102,6 +102,46 @@ pub struct FrontendBootstrap {
     pub curation: CurationContract,
 }
 
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct ImportedGameRecord {
+    pub machine_name: String,
+    pub title: String,
+    pub year: u16,
+    pub manufacturer: String,
+    pub genre: String,
+    pub rom_available: bool,
+    pub video_path: Option<String>,
+    pub artwork_paths: Vec<String>,
+    pub attract_caption: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct LibraryEntryRecord {
+    pub machine_name: String,
+    pub is_visible: bool,
+    pub is_favorite: bool,
+    pub browse_sort_order: Option<i64>,
+    pub attract_sort_order: Option<i64>,
+    pub include_in_attract_mode: bool,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct RecentGameRecord {
+    pub machine_name: String,
+    pub last_played_at: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct LibrarySnapshot {
+    pub imported_games: Vec<ImportedGameRecord>,
+    pub library_entries: Vec<LibraryEntryRecord>,
+    pub recent_games: Vec<RecentGameRecord>,
+}
+
 pub fn default_cabinet_config() -> CabinetConfig {
     CabinetConfig {
         display_profile: DISPLAY_PROFILE.to_owned(),

@@ -42,6 +42,29 @@ pub fn save_cabinet_config(
 }
 
 #[tauri::command]
+pub fn get_library_snapshot(
+    state: State<'_, store::AppState>,
+) -> Result<contract::LibrarySnapshot, String> {
+    state.load_library_snapshot()
+}
+
+#[tauri::command]
+pub fn toggle_game_favorite(
+    machine_name: String,
+    state: State<'_, store::AppState>,
+) -> Result<contract::LibrarySnapshot, String> {
+    state.toggle_game_favorite(&machine_name)
+}
+
+#[tauri::command]
+pub fn record_recent_game(
+    machine_name: String,
+    state: State<'_, store::AppState>,
+) -> Result<contract::LibrarySnapshot, String> {
+    state.record_recent_game(&machine_name)
+}
+
+#[tauri::command]
 pub fn get_runtime_contract() -> contract::RuntimeContract {
     contract::runtime_contract()
 }

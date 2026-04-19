@@ -2,12 +2,13 @@ use std::{
     collections::HashMap,
     fs,
     path::PathBuf,
+    time::{SystemTime, UNIX_EPOCH},
 };
 
-use rusqlite::{params, Connection};
+use rusqlite::{params, Connection, OptionalExtension};
 use tauri::{Manager, Runtime};
 
-use crate::{contract, db};
+use crate::{contract, db, seed};
 
 const DATABASE_FILENAME: &str = "karlo.sqlite3";
 
@@ -26,6 +27,7 @@ impl AppState {
 
         state.ensure_schema()?;
         state.seed_default_settings()?;
+        state.seed_mock_library_data()?;
 
         Ok(state)
     }
@@ -98,6 +100,66 @@ impl AppState {
         Ok(())
     }
 
+    pub fn load_library_snapshot(&self) -> Result<contract::LibrarySnapshot, String> {
+        let connection = self.open_connection()?;
+
+        Ok(contract::LibrarySnapshot {
+            imported_games: self.load_imported_games(&connection)?,
+            library_entries: self.load_library_entries(&connection)?,
+            recent_games: self.load_recent_games(&connection)?,
+        })
+    }
+
+    pub fn toggle_game_favorite(&self, machine_name: &str) -> Result<contract::LibrarySnapshot, String> {
+        let mut connection = self.open_connection()?;
+        let transaction = connection.transaction().map_err(|error| error.to_string())?;
+        let game_id = lookup_game_id(&transaction, machine_name)?;
+        let current_favorite = transaction
+            .query_row(
+                "SELECT is_favorite FROM library_entries WHERE game_id = ?1",
+                params![game_id],
+                |row| row.get::<_, bool>(0),
+            )
+            .optional()
+            .map_err(|error| error.to_string())?
+            .unwrap_or(false);
+
+        transaction
+            .execute(
+                "INSERT INTO library_entries (
+                    game_id,
+                    is_visible,
+                    is_favorite,
+                    include_in_attract_mode
+                 ) VALUES (?1, 1, ?2, 1)
+                 ON CONFLICT(game_id) DO UPDATE SET
+                    is_favorite = excluded.is_favorite",
+                params![game_id, !current_favorite],
+            )
+            .map_err(|error| error.to_string())?;
+
+        transaction.commit().map_err(|error| error.to_string())?;
+        self.load_library_snapshot()
+    }
+
+    pub fn record_recent_game(&self, machine_name: &str) -> Result<contract::LibrarySnapshot, String> {
+        let mut connection = self.open_connection()?;
+        let transaction = connection.transaction().map_err(|error| error.to_string())?;
+        let game_id = lookup_game_id(&transaction, machine_name)?;
+
+        transaction
+            .execute(
+                "INSERT INTO recent_games (game_id, last_played_at) VALUES (?1, ?2)
+                 ON CONFLICT(game_id) DO UPDATE SET
+                    last_played_at = excluded.last_played_at",
+                params![game_id, current_timestamp_text()?],
+            )
+            .map_err(|error| error.to_string())?;
+
+        transaction.commit().map_err(|error| error.to_string())?;
+        self.load_library_snapshot()
+    }
+
     fn ensure_schema(&self) -> Result<(), String> {
         let connection = self.open_connection()?;
         connection
@@ -121,6 +183,89 @@ impl AppState {
         Ok(())
     }
 
+    fn seed_mock_library_data(&self) -> Result<(), String> {
+        let mut connection = self.open_connection()?;
+        let existing_games: i64 = connection
+            .query_row("SELECT COUNT(*) FROM games", [], |row| row.get(0))
+            .map_err(|error| error.to_string())?;
+
+        if existing_games > 0 {
+            return Ok(());
+        }
+
+        let catalog = seed::mock_catalog()?;
+        let transaction = connection.transaction().map_err(|error| error.to_string())?;
+        let mut recent_index = 0_u32;
+
+        for (index, record) in catalog.iter().enumerate() {
+            let video_path = record
+                .attract_caption
+                .as_ref()
+                .map(|_| format!("media/previews/{}.mp4", record.machine_name));
+            let artwork_paths = if record.attract_caption.is_some() {
+                vec![format!("media/artwork/{}.png", record.machine_name)]
+            } else {
+                Vec::new()
+            };
+
+            transaction
+                .execute(
+                    "INSERT INTO games (
+                        machine_name,
+                        title,
+                        year,
+                        manufacturer,
+                        genre,
+                        rom_available,
+                        video_path,
+                        artwork_paths_json
+                     ) VALUES (?1, ?2, ?3, ?4, ?5, 1, ?6, ?7)",
+                    params![
+                        record.machine_name,
+                        record.title,
+                        i64::from(record.year),
+                        record.manufacturer,
+                        record.genre,
+                        video_path,
+                        serde_json::to_string(&artwork_paths).map_err(|error| error.to_string())?,
+                    ],
+                )
+                .map_err(|error| error.to_string())?;
+
+            let game_id = transaction.last_insert_rowid();
+            transaction
+                .execute(
+                    "INSERT INTO library_entries (
+                        game_id,
+                        is_visible,
+                        is_favorite,
+                        browse_sort_order,
+                        attract_sort_order,
+                        include_in_attract_mode
+                     ) VALUES (?1, 1, ?2, ?3, ?4, 1)",
+                    params![
+                        game_id,
+                        record.is_favorite.unwrap_or(false),
+                        index as i64,
+                        index as i64,
+                    ],
+                )
+                .map_err(|error| error.to_string())?;
+
+            if record.was_recently_played.unwrap_or(false) {
+                transaction
+                    .execute(
+                        "INSERT INTO recent_games (game_id, last_played_at) VALUES (?1, ?2)",
+                        params![game_id, seed_recent_timestamp(recent_index)],
+                    )
+                    .map_err(|error| error.to_string())?;
+                recent_index += 1;
+            }
+        }
+
+        transaction.commit().map_err(|error| error.to_string())
+    }
+
     fn load_settings_map(&self, connection: &Connection) -> Result<HashMap<String, String>, String> {
         let mut statement = connection
             .prepare("SELECT key, value FROM settings")
@@ -139,7 +284,141 @@ impl AppState {
     }
 
     fn open_connection(&self) -> Result<Connection, String> {
-        Connection::open(&self.db_path).map_err(|error| error.to_string())
+        let connection = Connection::open(&self.db_path).map_err(|error| error.to_string())?;
+        connection
+            .pragma_update(None, "foreign_keys", "ON")
+            .map_err(|error| error.to_string())?;
+        Ok(connection)
+    }
+
+    fn load_imported_games(
+        &self,
+        connection: &Connection,
+    ) -> Result<Vec<contract::ImportedGameRecord>, String> {
+        let mut statement = connection
+            .prepare(
+                "SELECT machine_name, title, year, manufacturer, genre, rom_available, video_path, artwork_paths_json
+                 FROM games
+                 ORDER BY title, machine_name",
+            )
+            .map_err(|error| error.to_string())?;
+        let rows = statement
+            .query_map([], |row| {
+                let artwork_paths_json: Option<String> = row.get(7)?;
+                Ok(contract::ImportedGameRecord {
+                    machine_name: row.get(0)?,
+                    title: row.get(1)?,
+                    year: row.get::<_, i64>(2)? as u16,
+                    manufacturer: row.get(3)?,
+                    genre: row.get(4)?,
+                    rom_available: row.get(5)?,
+                    video_path: row.get(6)?,
+                    artwork_paths: artwork_paths_json
+                        .map(|value| serde_json::from_str(&value))
+                        .transpose()
+                        .map_err(|error| {
+                            rusqlite::Error::FromSqlConversionFailure(
+                                7,
+                                rusqlite::types::Type::Text,
+                                Box::new(error),
+                            )
+                        })?
+                        .unwrap_or_default(),
+                    attract_caption: None,
+                })
+            })
+            .map_err(|error| error.to_string())?;
+
+        let mut imported_games = Vec::new();
+        for row in rows {
+            imported_games.push(row.map_err(|error| error.to_string())?);
+        }
+
+        let catalog = seed::mock_catalog()?;
+        let captions_by_machine = catalog
+            .into_iter()
+            .filter_map(|record| {
+                record
+                    .attract_caption
+                    .map(|caption| (record.machine_name, caption))
+            })
+            .collect::<HashMap<_, _>>();
+
+        for game in &mut imported_games {
+            game.attract_caption = captions_by_machine.get(&game.machine_name).cloned();
+        }
+
+        Ok(imported_games)
+    }
+
+    fn load_library_entries(
+        &self,
+        connection: &Connection,
+    ) -> Result<Vec<contract::LibraryEntryRecord>, String> {
+        let mut statement = connection
+            .prepare(
+                "SELECT
+                    games.machine_name,
+                    library_entries.is_visible,
+                    library_entries.is_favorite,
+                    library_entries.browse_sort_order,
+                    library_entries.attract_sort_order,
+                    library_entries.include_in_attract_mode
+                 FROM library_entries
+                 INNER JOIN games ON games.id = library_entries.game_id
+                 ORDER BY COALESCE(library_entries.browse_sort_order, 2147483647), games.title, games.machine_name",
+            )
+            .map_err(|error| error.to_string())?;
+        let rows = statement
+            .query_map([], |row| {
+                Ok(contract::LibraryEntryRecord {
+                    machine_name: row.get(0)?,
+                    is_visible: row.get(1)?,
+                    is_favorite: row.get(2)?,
+                    browse_sort_order: row.get(3)?,
+                    attract_sort_order: row.get(4)?,
+                    include_in_attract_mode: row.get(5)?,
+                })
+            })
+            .map_err(|error| error.to_string())?;
+
+        let mut library_entries = Vec::new();
+        for row in rows {
+            library_entries.push(row.map_err(|error| error.to_string())?);
+        }
+
+        Ok(library_entries)
+    }
+
+    fn load_recent_games(
+        &self,
+        connection: &Connection,
+    ) -> Result<Vec<contract::RecentGameRecord>, String> {
+        let mut statement = connection
+            .prepare(
+                "SELECT
+                    games.machine_name,
+                    recent_games.last_played_at
+                 FROM recent_games
+                 INNER JOIN games ON games.id = recent_games.game_id
+                 ORDER BY recent_games.last_played_at DESC, games.machine_name",
+            )
+            .map_err(|error| error.to_string())?;
+        let rows = statement
+            .query_map([], |row| {
+                Ok(contract::RecentGameRecord {
+                    machine_name: row.get(0)?,
+                    last_played_at: row.get(1)?,
+                })
+            })
+            .map_err(|error| error.to_string())?;
+
+        let mut recent_games = Vec::new();
+        for row in rows {
+            recent_games.push(row.map_err(|error| error.to_string())?);
+        }
+
+        Ok(recent_games)
     }
 }
 
@@ -213,6 +492,30 @@ fn json_array_or_default(
     }
 }
 
+fn lookup_game_id(connection: &Connection, machine_name: &str) -> Result<i64, String> {
+    connection
+        .query_row(
+            "SELECT id FROM games WHERE machine_name = ?1",
+            params![machine_name],
+            |row| row.get(0),
+        )
+        .optional()
+        .map_err(|error| error.to_string())?
+        .ok_or_else(|| format!("Unknown game: {machine_name}"))
+}
+
+fn current_timestamp_text() -> Result<String, String> {
+    let seconds = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_err(|error| error.to_string())?
+        .as_secs();
+    Ok(seconds.to_string())
+}
+
+fn seed_recent_timestamp(index: u32) -> String {
+    (1_776_470_400_u64 + u64::from(index)).to_string()
+}
+
 #[cfg(test)]
 mod tests {
     use std::time::{SystemTime, UNIX_EPOCH};
@@ -256,6 +559,51 @@ mod tests {
         let loaded = state.load_cabinet_config().unwrap();
 
         assert_eq!(loaded, contract::default_cabinet_config());
+
+        let _ = fs::remove_file(path);
+    }
+
+    #[test]
+    fn library_snapshot_seeds_from_shared_mock_catalog() {
+        let path = temp_database_path("library-seed");
+        let state = AppState {
+            db_path: path.clone(),
+        };
+        state.ensure_schema().unwrap();
+        state.seed_mock_library_data().unwrap();
+
+        let snapshot = state.load_library_snapshot().unwrap();
+
+        assert!(snapshot.imported_games.len() > 30);
+        assert_eq!(snapshot.imported_games[0].machine_name, "1942");
+        assert!(snapshot.library_entries.iter().any(|entry| entry.is_favorite));
+        assert!(snapshot.recent_games.iter().any(|entry| entry.machine_name == "pacman"));
+
+        let _ = fs::remove_file(path);
+    }
+
+    #[test]
+    fn favorite_toggles_and_recents_are_persisted() {
+        let path = temp_database_path("library-updates");
+        let state = AppState {
+            db_path: path.clone(),
+        };
+        state.ensure_schema().unwrap();
+        state.seed_mock_library_data().unwrap();
+
+        let snapshot = state.toggle_game_favorite("1942").unwrap();
+        let game = snapshot
+            .library_entries
+            .iter()
+            .find(|entry| entry.machine_name == "1942")
+            .unwrap();
+        assert!(game.is_favorite);
+
+        let snapshot = state.record_recent_game("1942").unwrap();
+        assert!(snapshot
+            .recent_games
+            .iter()
+            .any(|entry| entry.machine_name == "1942"));
 
         let _ = fs::remove_file(path);
     }

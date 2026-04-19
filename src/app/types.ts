@@ -123,3 +123,9 @@ export interface FrontendBootstrap {
   cabinetConfig: CabinetConfig;
   curation: CurationContract;
 }
+
+export interface LibrarySnapshot {
+  importedGames: ImportedGameRecord[];
+  libraryEntries: LibraryEntryRecord[];
+  recentGames: RecentGameRecord[];
+}
