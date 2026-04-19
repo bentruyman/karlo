@@ -6,7 +6,10 @@ export type ServiceSectionId = "launch" | "media" | "display" | "storage";
 
 export type ServiceActionId = "defaults" | "save";
 
-export type ServicePanelActionId = "openCalibration";
+export type ServicePanelActionId =
+  | "importCatalog"
+  | "scanRoms"
+  | "openCalibration";
 
 export type ServiceFieldKey = keyof CabinetConfigDraft;
 
@@ -47,6 +50,8 @@ const SERVICE_SECTION_FIELDS: Record<
 const SERVICE_SECTION_PANEL_ACTIONS: Partial<
   Record<ServiceSectionId, ServicePanelActionId[]>
 > = {
+  launch: ["importCatalog"],
+  media: ["scanRoms"],
   display: ["openCalibration"],
 };
 

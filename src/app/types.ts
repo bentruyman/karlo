@@ -129,3 +129,10 @@ export interface LibrarySnapshot {
   libraryEntries: LibraryEntryRecord[];
   recentGames: RecentGameRecord[];
 }
+
+export interface LibraryMaintenanceResult {
+  snapshot: LibrarySnapshot;
+  importedGamesCount: number;
+  romAvailableCount: number;
+  message: string;
+}

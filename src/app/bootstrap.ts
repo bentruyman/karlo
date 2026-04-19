@@ -4,6 +4,7 @@ import type {
   BrowseView,
   CabinetConfig,
   FrontendBootstrap,
+  LibraryMaintenanceResult,
   LibrarySnapshot,
   RuntimeContract,
 } from "./types";
@@ -173,4 +174,12 @@ export async function recordRecentGame(
   machineName: string,
 ): Promise<LibrarySnapshot> {
   return await invoke<LibrarySnapshot>("record_recent_game", { machineName });
+}
+
+export async function importMameCatalog(): Promise<LibraryMaintenanceResult> {
+  return await invoke<LibraryMaintenanceResult>("import_mame_catalog");
+}
+
+export async function scanRomRoots(): Promise<LibraryMaintenanceResult> {
+  return await invoke<LibraryMaintenanceResult>("scan_rom_roots");
 }

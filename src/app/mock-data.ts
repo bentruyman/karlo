@@ -77,7 +77,7 @@ export function buildGameRecords(
   return importedGames
     .flatMap((game) => {
       const libraryEntry = libraryByMachine.get(game.machineName);
-      if (!libraryEntry?.isVisible) return [];
+      if (!libraryEntry?.isVisible || !game.romAvailable) return [];
 
       return [
         {

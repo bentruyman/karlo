@@ -227,6 +227,60 @@ describe("buildGameRecords", () => {
       },
     ]);
   });
+
+  test("hides curated entries whose ROMs are not currently available", () => {
+    const importedGames: ImportedGameRecord[] = [
+      {
+        machineName: "alpha",
+        title: "Alpha",
+        year: 1981,
+        manufacturer: "Acme",
+        genre: "Action",
+        romAvailable: false,
+        artworkPaths: [],
+      },
+      {
+        machineName: "bravo",
+        title: "Bravo",
+        year: 1982,
+        manufacturer: "Acme",
+        genre: "Shooter",
+        romAvailable: true,
+        artworkPaths: [],
+      },
+    ];
+    const libraryEntries: LibraryEntryRecord[] = [
+      {
+        machineName: "alpha",
+        isVisible: true,
+        isFavorite: true,
+        browseSortOrder: 0,
+        includeInAttractMode: true,
+      },
+      {
+        machineName: "bravo",
+        isVisible: true,
+        isFavorite: false,
+        browseSortOrder: 1,
+        includeInAttractMode: true,
+      },
+    ];
+
+    expect(buildGameRecords(importedGames, libraryEntries, [])).toEqual([
+      {
+        id: "bravo",
+        machineName: "bravo",
+        title: "Bravo",
+        year: 1982,
+        manufacturer: "Acme",
+        genre: "Shooter",
+        romAvailable: true,
+        artworkPaths: [],
+        isFavorite: false,
+        wasRecentlyPlayed: false,
+      },
+    ]);
+  });
 });
 
 describe("getGamesForView", () => {

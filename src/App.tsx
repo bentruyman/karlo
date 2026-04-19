@@ -19,11 +19,13 @@ import {
 import {
   DEFAULT_LIBRARY_SNAPSHOT,
   DEFAULT_FRONTEND_BOOTSTRAP,
+  importMameCatalog,
   loadCabinetConfig,
   loadFrontendBootstrap,
   loadLibrarySnapshot,
   recordRecentGame,
   saveCabinetConfig,
+  scanRomRoots,
   toggleGameFavorite,
 } from "./app/bootstrap";
 import {
@@ -55,7 +57,13 @@ import {
   buildGameRecords,
   getGamesForView,
 } from "./app/mock-data";
-import type { BrowseView, BrowseViewId, CabinetConfig, GameRecord } from "./app/types";
+import type {
+  BrowseView,
+  BrowseViewId,
+  CabinetConfig,
+  GameRecord,
+  LibrarySnapshot,
+} from "./app/types";
 
 const ATTRACT_MODE_STEP_MS = 3_600;
 const VISIBLE_ROWS = 14;
@@ -195,7 +203,7 @@ export default function App() {
     if (isAttractMode) setIsAttractMode(false);
   }
 
-  function applyLibrarySnapshot(snapshot: typeof DEFAULT_LIBRARY_SNAPSHOT) {
+  function applyLibrarySnapshot(snapshot: LibrarySnapshot) {
     setImportedGames(snapshot.importedGames);
     setLibraryEntries(snapshot.libraryEntries);
     setRecentGames(snapshot.recentGames);
@@ -271,6 +279,16 @@ export default function App() {
   }
 
   function activateServicePanelAction(action: ServicePanelActionId) {
+    if (action === "importCatalog") {
+      void runCatalogImport();
+      return;
+    }
+
+    if (action === "scanRoms") {
+      void runRomScan();
+      return;
+    }
+
     if (action === "openCalibration") {
       openCalibration();
     }
@@ -387,11 +405,11 @@ export default function App() {
     setSettingsStatus("idle");
   }
 
-  const commitSettings = useEffectEvent(async () => {
+  const persistSettingsDraft = useEffectEvent(async () => {
     const parsed = parseCabinetConfigDraft(settingsDraft, activeCabinetConfig);
     if (!parsed.ok) {
       setSettingsStatus({ kind: "error", message: parsed.message });
-      return;
+      return null;
     }
 
     setSettingsStatus("saving");
@@ -400,10 +418,7 @@ export default function App() {
       const savedConfig = await saveCabinetConfig(parsed.value);
       setBootstrap((current) => ({ ...current, cabinetConfig: savedConfig }));
       setSettingsDraft(cabinetConfigToDraft(savedConfig));
-      setSettingsStatus({
-        kind: "saved",
-        message: "Cabinet settings saved to SQLite.",
-      });
+      return savedConfig;
     } catch (error) {
       setSettingsStatus({
         kind: "error",
@@ -411,6 +426,59 @@ export default function App() {
           error instanceof Error
             ? error.message
             : "Could not save cabinet settings.",
+      });
+      return null;
+    }
+  });
+
+  const commitSettings = useEffectEvent(async () => {
+    const savedConfig = await persistSettingsDraft();
+    if (savedConfig) {
+      setSettingsStatus({
+        kind: "saved",
+        message: "Cabinet settings saved to SQLite.",
+      });
+    }
+  });
+
+  const runCatalogImport = useEffectEvent(async () => {
+    const savedConfig = await persistSettingsDraft();
+    if (!savedConfig) return;
+
+    setSettingsStatus("saving");
+
+    try {
+      const result = await importMameCatalog();
+      applyLibrarySnapshot(result.snapshot);
+      setSettingsStatus({ kind: "saved", message: result.message });
+    } catch (error) {
+      setSettingsStatus({
+        kind: "error",
+        message:
+          error instanceof Error
+            ? error.message
+            : "Could not import the MAME catalog.",
+      });
+    }
+  });
+
+  const runRomScan = useEffectEvent(async () => {
+    const savedConfig = await persistSettingsDraft();
+    if (!savedConfig) return;
+
+    setSettingsStatus("saving");
+
+    try {
+      const result = await scanRomRoots();
+      applyLibrarySnapshot(result.snapshot);
+      setSettingsStatus({ kind: "saved", message: result.message });
+    } catch (error) {
+      setSettingsStatus({
+        kind: "error",
+        message:
+          error instanceof Error
+            ? error.message
+            : "Could not scan ROM roots.",
       });
     }
   });
@@ -756,6 +824,8 @@ export default function App() {
             fieldRefs={fieldRefs}
             onClose={closeSettings}
             onReset={resetSettingsDraft}
+            onImportCatalog={runCatalogImport}
+            onScanRoms={runRomScan}
             onOpenCalibration={openCalibration}
             onSave={() => activateServiceAction("save")}
             onSectionChange={(sectionId) => {
@@ -1200,6 +1270,8 @@ function ServiceMenu({
   fieldRefs,
   onClose,
   onReset,
+  onImportCatalog,
+  onScanRoms,
   onOpenCalibration,
   onSave,
   onSectionChange,
@@ -1219,6 +1291,8 @@ function ServiceMenu({
   >;
   onClose: () => void;
   onReset: () => void;
+  onImportCatalog: () => void;
+  onScanRoms: () => void;
   onOpenCalibration: () => void;
   onSave: () => void;
   onSectionChange: (section: ServiceSectionId) => void;
@@ -1410,6 +1484,22 @@ function ServiceMenu({
                       onActivate={onFieldActivate}
                       onBlur={onFieldBlur}
                     />
+                    <ServicePanelLauncher
+                      title="IMPORT MAME XML"
+                      body="Run the configured MAME executable with -listxml and upsert machine identity, title, year, and manufacturer into the games table."
+                      hint="PRESS START TO IMPORT"
+                      isFocused={
+                        serviceFocus.zone === "panelActions" &&
+                        serviceFocus.action === "importCatalog"
+                      }
+                      onFocusChange={() =>
+                        onFocusChange({
+                          zone: "panelActions",
+                          action: "importCatalog",
+                        })
+                      }
+                      onRun={onImportCatalog}
+                    />
                   </FieldGroup>
                 </SettingsSection>
               )}
@@ -1491,6 +1581,22 @@ function ServiceMenu({
                       onFocusChange={onFocusChange}
                       onActivate={onFieldActivate}
                       onBlur={onFieldBlur}
+                    />
+                    <ServicePanelLauncher
+                      title="SCAN ROM ROOTS"
+                      body="Walk the configured ROM roots, update rom_available on imported machines, and seed visible library entries for newly discovered sets."
+                      hint="PRESS START TO SCAN"
+                      isFocused={
+                        serviceFocus.zone === "panelActions" &&
+                        serviceFocus.action === "scanRoms"
+                      }
+                      onFocusChange={() =>
+                        onFocusChange({
+                          zone: "panelActions",
+                          action: "scanRoms",
+                        })
+                      }
+                      onRun={onScanRoms}
                     />
                   </FieldGroup>
                 </SettingsSection>
@@ -2104,6 +2210,62 @@ function CalibrationLauncher({
             </div>
           </div>
         ))}
+      </div>
+    </button>
+  );
+}
+
+function ServicePanelLauncher({
+  title,
+  body,
+  hint,
+  isFocused,
+  onFocusChange,
+  onRun,
+}: {
+  title: string;
+  body: string;
+  hint: string;
+  isFocused: boolean;
+  onFocusChange: () => void;
+  onRun: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      tabIndex={-1}
+      onClick={() => {
+        onFocusChange();
+        onRun();
+      }}
+      className="grid gap-[0.9cqh] rounded-none px-[1.2cqw] py-[1.1cqh] text-left ring-1 ring-cab-rule"
+      style={{
+        background: isFocused
+          ? "linear-gradient(90deg, rgba(248,216,79,0.16), rgba(248,216,79,0.03))"
+          : "rgba(255,255,255,0.02)",
+        boxShadow: isFocused
+          ? "0 0 0 0.32cqh rgba(248,216,79,0.34)"
+          : "none",
+      }}
+    >
+      <div className="flex items-start justify-between gap-[1.4cqw]">
+        <div className="grid gap-[0.45cqh]">
+          <div className="font-display text-cab-ink" style={{ fontSize: "2.45cqh" }}>
+            {title}
+          </div>
+          <div
+            className="max-w-[58ch] font-sans text-cab-mute"
+            style={{ fontSize: "1.88cqh", lineHeight: 1.22 }}
+          >
+            {body}
+          </div>
+        </div>
+        <div
+          className="font-display tracking-[0.2em] text-cab-accent"
+          style={{ fontSize: "1.8cqh" }}
+        >
+          {hint}
+        </div>
       </div>
     </button>
   );

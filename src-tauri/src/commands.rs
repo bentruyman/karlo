@@ -65,6 +65,20 @@ pub fn record_recent_game(
 }
 
 #[tauri::command]
+pub fn import_mame_catalog(
+    state: State<'_, store::AppState>,
+) -> Result<contract::LibraryMaintenanceResult, String> {
+    state.import_mame_catalog()
+}
+
+#[tauri::command]
+pub fn scan_rom_roots(
+    state: State<'_, store::AppState>,
+) -> Result<contract::LibraryMaintenanceResult, String> {
+    state.scan_rom_roots()
+}
+
+#[tauri::command]
 pub fn get_runtime_contract() -> contract::RuntimeContract {
     contract::runtime_contract()
 }

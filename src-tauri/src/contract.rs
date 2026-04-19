@@ -142,6 +142,15 @@ pub struct LibrarySnapshot {
     pub recent_games: Vec<RecentGameRecord>,
 }
 
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct LibraryMaintenanceResult {
+    pub snapshot: LibrarySnapshot,
+    pub imported_games_count: usize,
+    pub rom_available_count: usize,
+    pub message: String,
+}
+
 pub fn default_cabinet_config() -> CabinetConfig {
     CabinetConfig {
         display_profile: DISPLAY_PROFILE.to_owned(),

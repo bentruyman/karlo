@@ -1,5 +1,5 @@
 use std::{
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     fs,
     path::PathBuf,
     time::{SystemTime, UNIX_EPOCH},
@@ -8,7 +8,7 @@ use std::{
 use rusqlite::{params, Connection, OptionalExtension};
 use tauri::{Manager, Runtime};
 
-use crate::{contract, db, seed};
+use crate::{contract, db, importer, seed};
 
 const DATABASE_FILENAME: &str = "karlo.sqlite3";
 
@@ -158,6 +158,117 @@ impl AppState {
 
         transaction.commit().map_err(|error| error.to_string())?;
         self.load_library_snapshot()
+    }
+
+    pub fn import_mame_catalog(&self) -> Result<contract::LibraryMaintenanceResult, String> {
+        let cabinet_config = self.load_cabinet_config()?;
+        let imported_machines =
+            importer::import_mame_catalog(&cabinet_config.paths.mame_executable_path)?;
+        let mut connection = self.open_connection()?;
+        let transaction = connection.transaction().map_err(|error| error.to_string())?;
+        let existing_games = self.load_existing_game_state(&transaction)?;
+
+        for machine in &imported_machines {
+            let existing = existing_games.get(&machine.machine_name);
+            let genre = existing
+                .and_then(|state| state.genre.clone())
+                .unwrap_or_else(|| "Unknown".to_owned());
+            let rom_available = existing.map(|state| state.rom_available).unwrap_or(false);
+            let video_path = existing.and_then(|state| state.video_path.clone());
+            let artwork_paths = existing
+                .map(|state| state.artwork_paths.clone())
+                .unwrap_or_default();
+
+            transaction
+                .execute(
+                    "INSERT INTO games (
+                        machine_name,
+                        title,
+                        year,
+                        manufacturer,
+                        genre,
+                        rom_available,
+                        video_path,
+                        artwork_paths_json
+                     ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
+                     ON CONFLICT(machine_name) DO UPDATE SET
+                        title = excluded.title,
+                        year = excluded.year,
+                        manufacturer = excluded.manufacturer,
+                        genre = excluded.genre,
+                        rom_available = excluded.rom_available,
+                        video_path = excluded.video_path,
+                        artwork_paths_json = excluded.artwork_paths_json",
+                    params![
+                        machine.machine_name,
+                        machine.title,
+                        i64::from(machine.year),
+                        machine.manufacturer,
+                        genre,
+                        rom_available,
+                        video_path,
+                        serde_json::to_string(&artwork_paths).map_err(|error| error.to_string())?,
+                    ],
+                )
+                .map_err(|error| error.to_string())?;
+        }
+
+        transaction.commit().map_err(|error| error.to_string())?;
+        let snapshot = self.load_library_snapshot()?;
+        let rom_available_count = snapshot
+            .imported_games
+            .iter()
+            .filter(|game| game.rom_available)
+            .count();
+
+        Ok(contract::LibraryMaintenanceResult {
+            snapshot,
+            imported_games_count: imported_machines.len(),
+            rom_available_count,
+            message: format!(
+                "Imported {} MAME machines from -listxml.",
+                imported_machines.len()
+            ),
+        })
+    }
+
+    pub fn scan_rom_roots(&self) -> Result<contract::LibraryMaintenanceResult, String> {
+        let cabinet_config = self.load_cabinet_config()?;
+        let discovered_machine_names = importer::scan_rom_roots(&cabinet_config.paths.rom_roots)?;
+        let mut connection = self.open_connection()?;
+        let transaction = connection.transaction().map_err(|error| error.to_string())?;
+
+        let game_rows = load_game_rows(&transaction)?;
+        for row in &game_rows {
+            let is_available = discovered_machine_names.contains(&row.machine_name);
+            transaction
+                .execute(
+                    "UPDATE games SET rom_available = ?2 WHERE id = ?1",
+                    params![row.id, is_available],
+                )
+                .map_err(|error| error.to_string())?;
+        }
+
+        seed_missing_library_entries(&transaction, &game_rows, &discovered_machine_names)?;
+        transaction.commit().map_err(|error| error.to_string())?;
+
+        let snapshot = self.load_library_snapshot()?;
+        let rom_available_count = snapshot
+            .imported_games
+            .iter()
+            .filter(|game| game.rom_available)
+            .count();
+
+        Ok(contract::LibraryMaintenanceResult {
+            imported_games_count: snapshot.imported_games.len(),
+            rom_available_count,
+            message: format!(
+                "Scanned {} ROM roots and found {} available sets.",
+                cabinet_config.paths.rom_roots.len(),
+                rom_available_count,
+            ),
+            snapshot,
+        })
     }
 
     fn ensure_schema(&self) -> Result<(), String> {
@@ -420,6 +531,47 @@ impl AppState {
 
         Ok(recent_games)
     }
+
+    fn load_existing_game_state(
+        &self,
+        connection: &Connection,
+    ) -> Result<HashMap<String, ExistingGameState>, String> {
+        let mut statement = connection
+            .prepare(
+                "SELECT machine_name, genre, rom_available, video_path, artwork_paths_json
+                 FROM games",
+            )
+            .map_err(|error| error.to_string())?;
+        let rows = statement
+            .query_map([], |row| {
+                let artwork_paths_json: Option<String> = row.get(4)?;
+                Ok(ExistingGameState {
+                    machine_name: row.get(0)?,
+                    genre: row.get(1)?,
+                    rom_available: row.get(2)?,
+                    video_path: row.get(3)?,
+                    artwork_paths: artwork_paths_json
+                        .map(|value| serde_json::from_str(&value))
+                        .transpose()
+                        .map_err(|error| {
+                            rusqlite::Error::FromSqlConversionFailure(
+                                4,
+                                rusqlite::types::Type::Text,
+                                Box::new(error),
+                            )
+                        })?
+                        .unwrap_or_default(),
+                })
+            })
+            .map_err(|error| error.to_string())?;
+
+        let mut map = HashMap::new();
+        for row in rows {
+            let row = row.map_err(|error| error.to_string())?;
+            map.insert(row.machine_name.clone(), row);
+        }
+        Ok(map)
+    }
 }
 
 fn settings_pairs(cabinet_config: &contract::CabinetConfig) -> Result<Vec<(String, String)>, String> {
@@ -514,6 +666,99 @@ fn current_timestamp_text() -> Result<String, String> {
 
 fn seed_recent_timestamp(index: u32) -> String {
     (1_776_470_400_u64 + u64::from(index)).to_string()
+}
+
+fn load_game_rows(connection: &Connection) -> Result<Vec<GameRow>, String> {
+    let mut statement = connection
+        .prepare("SELECT id, machine_name FROM games ORDER BY title, machine_name")
+        .map_err(|error| error.to_string())?;
+    let rows = statement
+        .query_map([], |row| {
+            Ok(GameRow {
+                id: row.get(0)?,
+                machine_name: row.get(1)?,
+            })
+        })
+        .map_err(|error| error.to_string())?;
+
+    let mut game_rows = Vec::new();
+    for row in rows {
+        game_rows.push(row.map_err(|error| error.to_string())?);
+    }
+    Ok(game_rows)
+}
+
+fn seed_missing_library_entries(
+    connection: &Connection,
+    game_rows: &[GameRow],
+    discovered_machine_names: &HashSet<String>,
+) -> Result<(), String> {
+    let existing_ids = existing_library_entry_ids(connection)?;
+    let mut next_sort_order = next_library_sort_order(connection)?;
+
+    for row in game_rows {
+        if existing_ids.contains(&row.id) || !discovered_machine_names.contains(&row.machine_name) {
+            continue;
+        }
+
+        connection
+            .execute(
+                "INSERT INTO library_entries (
+                    game_id,
+                    is_visible,
+                    is_favorite,
+                    browse_sort_order,
+                    attract_sort_order,
+                    include_in_attract_mode
+                 ) VALUES (?1, 1, 0, ?2, ?3, 1)",
+                params![row.id, next_sort_order, next_sort_order],
+            )
+            .map_err(|error| error.to_string())?;
+
+        next_sort_order += 1;
+    }
+
+    Ok(())
+}
+
+fn existing_library_entry_ids(connection: &Connection) -> Result<HashSet<i64>, String> {
+    let mut statement = connection
+        .prepare("SELECT game_id FROM library_entries")
+        .map_err(|error| error.to_string())?;
+    let rows = statement
+        .query_map([], |row| row.get(0))
+        .map_err(|error| error.to_string())?;
+
+    let mut ids = HashSet::new();
+    for row in rows {
+        ids.insert(row.map_err(|error| error.to_string())?);
+    }
+    Ok(ids)
+}
+
+fn next_library_sort_order(connection: &Connection) -> Result<i64, String> {
+    connection
+        .query_row(
+            "SELECT COALESCE(MAX(browse_sort_order), -1) + 1 FROM library_entries",
+            [],
+            |row| row.get(0),
+        )
+        .map_err(|error| error.to_string())
+}
+
+#[derive(Debug, Clone)]
+struct ExistingGameState {
+    machine_name: String,
+    genre: Option<String>,
+    rom_available: bool,
+    video_path: Option<String>,
+    artwork_paths: Vec<String>,
+}
+
+#[derive(Debug, Clone)]
+struct GameRow {
+    id: i64,
+    machine_name: String,
 }
 
 #[cfg(test)]

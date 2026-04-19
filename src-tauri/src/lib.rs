@@ -1,6 +1,7 @@
 mod commands;
 mod contract;
 mod db;
+mod importer;
 mod seed;
 mod store;
 
@@ -22,8 +23,10 @@ pub fn run() {
             commands::get_cabinet_config,
             commands::get_library_snapshot,
             commands::get_runtime_contract,
+            commands::import_mame_catalog,
             commands::record_recent_game,
             commands::save_cabinet_config,
+            commands::scan_rom_roots,
             commands::toggle_game_favorite,
             commands::get_schema_overview
         ])
