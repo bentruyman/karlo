@@ -1,6 +1,12 @@
 import { describe, expect, test } from "bun:test";
 
-import { buildGameRecords, getGamesForView } from "./mock-data";
+import {
+  buildGameRecords,
+  getBrowseGroupState,
+  getBrowseViewSummary,
+  getGamesForView,
+  jumpBrowseGroup,
+} from "./library";
 import { getTitleBucket, jumpLetter, wrapIndex } from "./browse";
 import type {
   GameRecord,
@@ -346,6 +352,57 @@ describe("getGamesForView", () => {
   });
 });
 
+describe("getBrowseGroupState", () => {
+  test("tracks title-bucket groups for favorites and recent views", () => {
+    const state = getBrowseGroupState("favorites", sampleGames, 0);
+
+    expect(state).toEqual({
+      currentLabel: "D",
+      labels: ["D", "A", "C", "B"],
+      mode: "titleBucket",
+    });
+  });
+
+  test("tracks facet groups for grouped views", () => {
+    const state = getBrowseGroupState(
+      "genre",
+      getGamesForView("genre", sampleGames).games,
+      2,
+    );
+
+    expect(state).toEqual({
+      currentLabel: "Maze",
+      labels: ["Action", "Maze", "Shooter"],
+      mode: "facet",
+    });
+  });
+});
+
+describe("getBrowseViewSummary", () => {
+  test("reports real counts and facet counts for each view", () => {
+    expect(getBrowseViewSummary("favorites", sampleGames)).toEqual({
+      statLabel: "KEEPERS",
+      statValue: 2,
+    });
+    expect(getBrowseViewSummary("recent", sampleGames)).toEqual({
+      statLabel: "PLAYED",
+      statValue: 2,
+    });
+    expect(getBrowseViewSummary("genre", sampleGames)).toEqual({
+      statLabel: "GENRES",
+      statValue: 3,
+    });
+    expect(getBrowseViewSummary("year", sampleGames)).toEqual({
+      statLabel: "YEARS",
+      statValue: 3,
+    });
+    expect(getBrowseViewSummary("manufacturer", sampleGames)).toEqual({
+      statLabel: "MAKERS",
+      statValue: 2,
+    });
+  });
+});
+
 describe("getTitleBucket", () => {
   test("groups numeric titles into a 0-9 bucket", () => {
     expect(getTitleBucket("1942")).toBe("0-9");
@@ -374,5 +431,21 @@ describe("jumpLetter", () => {
   test("lands on the top of the previous bucket when moving backward", () => {
     expect(jumpLetter(jumpGames, 3, -1)).toBe(1);
     expect(jumpLetter(jumpGames, 4, -1)).toBe(1);
+  });
+});
+
+describe("jumpBrowseGroup", () => {
+  test("uses title buckets for favorites and recent views", () => {
+    expect(jumpBrowseGroup("favorites", jumpGames, 1, 1)).toBe(3);
+    expect(jumpBrowseGroup("recent", jumpGames, 4, -1)).toBe(1);
+  });
+
+  test("jumps between real facet groups for grouped views", () => {
+    const byGenre = getGamesForView("genre", sampleGames).games;
+    const byManufacturer = getGamesForView("manufacturer", sampleGames).games;
+
+    expect(jumpBrowseGroup("genre", byGenre, 0, 1)).toBe(2);
+    expect(jumpBrowseGroup("genre", byGenre, 3, -1)).toBe(2);
+    expect(jumpBrowseGroup("manufacturer", byManufacturer, 0, 1)).toBe(2);
   });
 });

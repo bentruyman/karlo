@@ -11,8 +11,6 @@ import {
 
 import {
   clampIndex,
-  getTitleBucket,
-  jumpLetter,
   TITLE_BUCKETS,
   wrapIndex,
 } from "./app/browse";
@@ -55,8 +53,12 @@ import {
 } from "./app/navigation";
 import {
   buildGameRecords,
+  getBrowseGroupLabel,
+  getBrowseGroupState,
+  getBrowseViewSummary,
   getGamesForView,
-} from "./app/mock-data";
+  jumpBrowseGroup,
+} from "./app/library";
 import type {
   BrowseView,
   BrowseViewId,
@@ -146,14 +148,21 @@ export default function App() {
     [activeView.id, games],
   );
   const visibleGames = visibleState.games;
+  const activeSelectedIndex = clampIndex(selectedIndex, visibleGames.length);
+  const selectedGame = visibleGames[activeSelectedIndex] ?? visibleGames[0];
   const attractTimeoutMs = bootstrap.cabinetConfig.attractTimeoutSeconds * 1_000;
   const displayCalibration = bootstrap.cabinetConfig.displayCalibration;
-
-  const bucketsPresent = useMemo(() => {
-    const present = new Set<string>();
-    for (const g of visibleGames) present.add(getTitleBucket(g.title));
-    return present;
-  }, [visibleGames]);
+  const browseGroupState = useMemo(
+    () => getBrowseGroupState(activeView.id, visibleGames, activeSelectedIndex),
+    [activeView.id, activeSelectedIndex, visibleGames],
+  );
+  const viewSummaries = useMemo(
+    () =>
+      new Map(
+        browseViews.map((view) => [view.id, getBrowseViewSummary(view.id, games)]),
+      ),
+    [browseViews, games],
+  );
 
   useEffect(() => {
     let cancelled = false;
@@ -193,8 +202,6 @@ export default function App() {
     setServiceFocus(nextFocus);
   }, [isSettingsOpen, serviceFocus, settingsSection]);
 
-  const activeSelectedIndex = clampIndex(selectedIndex, visibleGames.length);
-  const selectedGame = visibleGames[activeSelectedIndex] ?? visibleGames[0];
   const activeCabinetConfig = bootstrap.cabinetConfig;
   const isServiceOpen = isSettingsOpen || isCalibrationOpen;
 
@@ -350,8 +357,10 @@ export default function App() {
     });
   }
 
-  function nextLetter(direction: 1 | -1) {
-    setSelection(jumpLetter(visibleGames, activeSelectedIndex, direction));
+  function nextGroup(direction: 1 | -1) {
+    setSelection(
+      jumpBrowseGroup(activeView.id, visibleGames, activeSelectedIndex, direction),
+    );
   }
 
   const toggleFavorite = useEffectEvent(async () => {
@@ -688,7 +697,7 @@ export default function App() {
           cycleView(-1);
           return;
         }
-        nextLetter(-1);
+        nextGroup(-1);
         return;
       case "arrowright":
         event.preventDefault();
@@ -697,7 +706,7 @@ export default function App() {
           cycleView(1);
           return;
         }
-        nextLetter(1);
+        nextGroup(1);
         return;
       case "enter":
       case "1":
@@ -762,8 +771,6 @@ export default function App() {
 
   if (!selectedGame) return null;
 
-  const currentBucket = getTitleBucket(selectedGame.title);
-
   return (
     <div
       className="isolate grid h-screen w-screen place-items-center overflow-hidden bg-black text-cab-ink antialiased"
@@ -791,17 +798,18 @@ export default function App() {
             browseViews={browseViews}
             activeIndex={viewIndex}
             isFocused={browseFocusZone === "modeBar"}
+            summaries={viewSummaries}
             onFocusZone={() => setBrowseFocusZone("modeBar")}
             onSelect={jumpToView}
           />
 
           <div className="grid grid-cols-[44%_1fr] gap-[3cqw] min-h-0">
             <ListColumn
+              activeViewId={activeView.id}
               games={visibleGames}
               selectedIndex={activeSelectedIndex}
               isFocused={browseFocusZone === "gameList"}
-              currentBucket={currentBucket}
-              bucketsPresent={bucketsPresent}
+              browseGroupState={browseGroupState}
               onFocusZone={() => setBrowseFocusZone("gameList")}
               onSelect={setSelection}
               fallbackLabel={visibleState.fallbackLabel}
@@ -889,12 +897,14 @@ function ModeBar({
   browseViews,
   activeIndex,
   isFocused,
+  summaries,
   onFocusZone,
   onSelect,
 }: {
   browseViews: BrowseView[];
   activeIndex: number;
   isFocused: boolean;
+  summaries: Map<BrowseViewId, { statLabel: string; statValue: number }>;
   onFocusZone: () => void;
   onSelect: (id: BrowseViewId) => void;
 }) {
@@ -906,6 +916,7 @@ function ModeBar({
       <ul role="list" className="flex items-end gap-[2.6cqw]">
         {browseViews.map((view, index) => {
           const isActive = index === activeIndex;
+          const summary = summaries.get(view.id);
           return (
             <li key={view.id} className="relative">
               <button
@@ -915,10 +926,8 @@ function ModeBar({
                   onFocusZone();
                   onSelect(view.id);
                 }}
-                className="rounded-none px-[0.7cqw] py-[0.55cqh] font-display leading-none transition-colors"
+                className="grid gap-[0.3cqh] rounded-none px-[0.7cqw] py-[0.55cqh] transition-colors"
                 style={{
-                  fontSize: "3.6cqh",
-                  color: isActive ? "var(--color-cab-ink)" : "var(--color-cab-mute)",
                   background:
                     isFocused && isActive
                       ? "rgba(248,216,79,0.08)"
@@ -929,7 +938,23 @@ function ModeBar({
                       : "none",
                 }}
               >
-                {view.label}
+                <div
+                  className="font-display leading-none"
+                  style={{
+                    fontSize: "3.6cqh",
+                    color: isActive
+                      ? "var(--color-cab-ink)"
+                      : "var(--color-cab-mute)",
+                  }}
+                >
+                  {view.label}
+                </div>
+                <div
+                  className="font-sans text-cab-dim tabular-nums"
+                  style={{ fontSize: "1.45cqh", lineHeight: 1.1 }}
+                >
+                  {summary ? `${summary.statValue} ${summary.statLabel}` : view.description}
+                </div>
               </button>
               {isActive && (
                 <span
@@ -947,20 +972,20 @@ function ModeBar({
 }
 
 function ListColumn({
+  activeViewId,
   games,
   selectedIndex,
   isFocused,
-  currentBucket,
-  bucketsPresent,
+  browseGroupState,
   onFocusZone,
   onSelect,
   fallbackLabel,
 }: {
+  activeViewId: BrowseViewId;
   games: GameRecord[];
   selectedIndex: number;
   isFocused: boolean;
-  currentBucket: string;
-  bucketsPresent: Set<string>;
+  browseGroupState: { currentLabel: string; labels: string[]; mode: "titleBucket" | "facet" };
   onFocusZone: () => void;
   onSelect: (index: number) => void;
   fallbackLabel?: string;
@@ -1001,8 +1026,22 @@ function ListColumn({
         {rows.map((game, i) => {
           const absoluteIndex = windowStart + i;
           const isActive = absoluteIndex === selectedIndex;
+          const groupLabel = getBrowseGroupLabel(activeViewId, game);
+          const previousGroupLabel =
+            i === 0 ? null : getBrowseGroupLabel(activeViewId, rows[i - 1]);
+          const showGroupHeader =
+            browseGroupState.mode === "facet" && groupLabel !== previousGroupLabel;
           return (
-            <li key={game.id} className="flex items-center gap-[1cqw]">
+            <li key={game.id} className="grid gap-[0.45cqh]">
+              {showGroupHeader && (
+                <div
+                  className="font-display tracking-[0.18em] text-cab-accent"
+                  style={{ fontSize: "1.75cqh" }}
+                >
+                  {groupLabel}
+                </div>
+              )}
+              <div className="flex items-center gap-[1cqw]">
               <span
                 aria-hidden
                 className="font-display leading-none"
@@ -1072,12 +1111,17 @@ function ListColumn({
                   </div>
                 )}
               </button>
+              </div>
             </li>
           );
         })}
       </ul>
 
-      <LetterRibbon current={currentBucket} present={bucketsPresent} />
+      <BrowseMarkerRail
+        currentLabel={browseGroupState.currentLabel}
+        labels={browseGroupState.labels}
+        mode={browseGroupState.mode}
+      />
 
       <div
         className="flex items-baseline justify-between font-display tracking-[0.2em] text-cab-mute"
@@ -1087,55 +1131,94 @@ function ListColumn({
           <span className="text-cab-ink">{String(selectedIndex + 1).padStart(3, "0")}</span>
           <span> / {String(games.length).padStart(3, "0")}</span>
         </span>
-        <span>GROUP {currentBucket}</span>
+        <span>GROUP {browseGroupState.currentLabel}</span>
       </div>
     </div>
   );
 }
 
-function LetterRibbon({
-  current,
-  present,
+function BrowseMarkerRail({
+  currentLabel,
+  labels,
+  mode,
 }: {
-  current: string;
-  present: Set<string>;
+  currentLabel: string;
+  labels: string[];
+  mode: "titleBucket" | "facet";
 }) {
+  if (mode === "titleBucket") {
+    const present = new Set(labels);
+    return (
+      <div
+        className="grid items-center font-display tracking-[0.1em]"
+        style={{
+          gridTemplateColumns: `repeat(${TITLE_BUCKETS.length}, minmax(0, 1fr))`,
+          fontSize: "2.4cqh",
+        }}
+      >
+        {TITLE_BUCKETS.map((bucket) => {
+          const isPresent = present.has(bucket);
+          const isCurrent = bucket === currentLabel;
+          return (
+            <div key={bucket} className="relative flex justify-center leading-none">
+              <span
+                style={{
+                  color: isCurrent
+                    ? "var(--color-cab-accent)"
+                    : isPresent
+                      ? "var(--color-cab-ink)"
+                      : "var(--color-cab-dim)",
+                  fontWeight: isCurrent ? 700 : 400,
+                }}
+              >
+                {bucket}
+              </span>
+              {isCurrent && (
+                <span
+                  aria-hidden
+                  className="absolute -bottom-[1cqh] left-0 right-0 mx-auto rounded-full"
+                  style={{
+                    width: "0.8cqh",
+                    height: "0.8cqh",
+                    background: "var(--color-cab-accent)",
+                  }}
+                />
+              )}
+            </div>
+          );
+        })}
+      </div>
+    );
+  }
+
+  const currentIndex = Math.max(labels.indexOf(currentLabel), 0);
+  const start = Math.max(0, currentIndex - 3);
+  const end = Math.min(labels.length, start + 7);
+  const visibleLabels = labels.slice(Math.max(0, end - 7), end);
+
   return (
     <div
       className="grid items-center font-display tracking-[0.1em]"
       style={{
-        gridTemplateColumns: `repeat(${TITLE_BUCKETS.length}, minmax(0, 1fr))`,
-        fontSize: "2.4cqh",
+        gridTemplateColumns: `repeat(${visibleLabels.length}, minmax(0, 1fr))`,
+        fontSize: "2.2cqh",
       }}
     >
-      {TITLE_BUCKETS.map((bucket) => {
-        const isPresent = present.has(bucket);
-        const isCurrent = bucket === current;
+      {visibleLabels.map((label) => {
+        const isCurrent = label === currentLabel;
         return (
-          <div key={bucket} className="relative flex justify-center leading-none">
-            <span
-              style={{
-                color: isCurrent
-                  ? "var(--color-cab-accent)"
-                  : isPresent
-                    ? "var(--color-cab-ink)"
-                    : "var(--color-cab-dim)",
-                fontWeight: isCurrent ? 700 : 400,
-              }}
-            >
-              {bucket}
-            </span>
-            {isCurrent && (
-              <span
-                aria-hidden
-                className="absolute -bottom-[1cqh] left-0 right-0 mx-auto rounded-full"
-                style={{
-                  width: "0.8cqh",
-                  height: "0.8cqh",
-                  background: "var(--color-cab-accent)",
-                }}
-              />
-            )}
+          <div
+            key={label}
+            className="truncate text-center leading-none"
+            style={{
+              color: isCurrent
+                ? "var(--color-cab-accent)"
+                : "var(--color-cab-mute)",
+              fontWeight: isCurrent ? 700 : 400,
+            }}
+            title={label}
+          >
+            {label}
           </div>
         );
       })}
