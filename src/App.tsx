@@ -23,6 +23,15 @@ import {
   saveCabinetConfig,
 } from "./app/bootstrap";
 import {
+  adjustCalibrationDraft,
+  CALIBRATION_EDGES,
+  getCalibrationPreviewInsets,
+  moveCalibrationFocus,
+  type CalibrationActionId,
+  type CalibrationEdgeKey,
+  type CalibrationFocusTarget,
+} from "./app/calibration";
+import {
   cabinetConfigToDraft,
   parseCabinetConfigDraft,
   type CabinetConfigDraft,
@@ -35,6 +44,7 @@ import {
   type ServiceActionId,
   type ServiceFieldKey,
   type ServiceFocusTarget,
+  type ServicePanelActionId,
   type ServiceSectionId,
 } from "./app/navigation";
 import {
@@ -74,12 +84,18 @@ export default function App() {
   const [browseFocusZone, setBrowseFocusZone] =
     useState<BrowseFocusZone>("gameList");
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [isCalibrationOpen, setIsCalibrationOpen] = useState(false);
   const [settingsSection, setSettingsSection] =
     useState<ServiceSectionId>("launch");
   const [serviceFocus, setServiceFocus] = useState<ServiceFocusTarget>({
     zone: "sections",
     index: getServiceSectionIndex("launch"),
   });
+  const [calibrationFocus, setCalibrationFocus] =
+    useState<CalibrationFocusTarget>({
+      zone: "edges",
+      index: 0,
+    });
   const [editingField, setEditingField] = useState<ServiceFieldKey | null>(null);
   const [settingsDraft, setSettingsDraft] = useState<CabinetConfigDraft>(() =>
     cabinetConfigToDraft(DEFAULT_FRONTEND_BOOTSTRAP.cabinetConfig),
@@ -161,7 +177,7 @@ export default function App() {
   const activeSelectedIndex = clampIndex(selectedIndex, visibleGames.length);
   const selectedGame = visibleGames[activeSelectedIndex] ?? visibleGames[0];
   const activeCabinetConfig = bootstrap.cabinetConfig;
-  const activeServiceSectionIndex = getServiceSectionIndex(settingsSection);
+  const isServiceOpen = isSettingsOpen || isCalibrationOpen;
 
   function noteInteraction() {
     lastInteractionAtRef.current = Date.now();
@@ -193,9 +209,73 @@ export default function App() {
     });
   }
 
+  function resetCalibrationDraft() {
+    setSettingsDraft((current) => ({
+      ...current,
+      topInsetPercent: String(
+        DEFAULT_FRONTEND_BOOTSTRAP.cabinetConfig.displayCalibration
+          .topInsetPercent,
+      ),
+      rightInsetPercent: String(
+        DEFAULT_FRONTEND_BOOTSTRAP.cabinetConfig.displayCalibration
+          .rightInsetPercent,
+      ),
+      bottomInsetPercent: String(
+        DEFAULT_FRONTEND_BOOTSTRAP.cabinetConfig.displayCalibration
+          .bottomInsetPercent,
+      ),
+      leftInsetPercent: String(
+        DEFAULT_FRONTEND_BOOTSTRAP.cabinetConfig.displayCalibration
+          .leftInsetPercent,
+      ),
+    }));
+    setSettingsStatus("idle");
+  }
+
+  function nudgeCalibration(edgeKey: CalibrationEdgeKey, delta: number) {
+    setSettingsDraft((current) => adjustCalibrationDraft(current, edgeKey, delta));
+    setSettingsStatus("idle");
+  }
+
+  function openCalibration() {
+    noteInteraction();
+    stopEditingField();
+    setSettingsSection("display");
+    setCalibrationFocus({ zone: "edges", index: 0 });
+    setIsSettingsOpen(false);
+    setIsCalibrationOpen(true);
+  }
+
+  function closeCalibration() {
+    setIsCalibrationOpen(false);
+    setIsSettingsOpen(true);
+    setSettingsSection("display");
+    applyServiceFocus({ zone: "panelActions", action: "openCalibration" });
+  }
+
+  function activateServicePanelAction(action: ServicePanelActionId) {
+    if (action === "openCalibration") {
+      openCalibration();
+    }
+  }
+
   function activateServiceAction(action: ServiceActionId) {
     if (action === "defaults") {
       resetSettingsDraft();
+      return;
+    }
+
+    void commitSettings();
+  }
+
+  function activateCalibrationAction(action: CalibrationActionId) {
+    if (action === "back") {
+      closeCalibration();
+      return;
+    }
+
+    if (action === "defaults") {
+      resetCalibrationDraft();
       return;
     }
 
@@ -262,8 +342,10 @@ export default function App() {
       zone: "sections",
       index: getServiceSectionIndex("launch"),
     });
+    setCalibrationFocus({ zone: "edges", index: 0 });
     setEditingField(null);
     setIsSettingsOpen(true);
+    setIsCalibrationOpen(false);
 
     const cabinetConfig = await loadCabinetConfig();
     setBootstrap((current) => ({ ...current, cabinetConfig }));
@@ -273,6 +355,7 @@ export default function App() {
   function closeSettings() {
     stopEditingField();
     setIsSettingsOpen(false);
+    setIsCalibrationOpen(false);
     setSettingsStatus("idle");
     setBrowseFocusZone(browseFocusBeforeSettingsRef.current);
   }
@@ -330,6 +413,72 @@ export default function App() {
         target.tagName === "TEXTAREA" ||
         target.tagName === "SELECT" ||
         target.isContentEditable);
+
+    if (isCalibrationOpen) {
+      if (key === "escape") {
+        event.preventDefault();
+        noteInteraction();
+        closeCalibration();
+        return;
+      }
+
+      if ((event.metaKey || event.ctrlKey) && key === "s") {
+        event.preventDefault();
+        void commitSettings();
+        return;
+      }
+
+      if (key === "arrowup") {
+        event.preventDefault();
+        noteInteraction();
+        setCalibrationFocus((current) => moveCalibrationFocus(current, "up"));
+        return;
+      }
+
+      if (key === "arrowdown") {
+        event.preventDefault();
+        noteInteraction();
+        setCalibrationFocus((current) => moveCalibrationFocus(current, "down"));
+        return;
+      }
+
+      if (key === "arrowleft") {
+        event.preventDefault();
+        noteInteraction();
+        if (calibrationFocus.zone === "edges") {
+          const edgeKey = CALIBRATION_EDGES[calibrationFocus.index]?.key;
+          if (edgeKey) nudgeCalibration(edgeKey, -1);
+          return;
+        }
+
+        setCalibrationFocus((current) => moveCalibrationFocus(current, "left"));
+        return;
+      }
+
+      if (key === "arrowright") {
+        event.preventDefault();
+        noteInteraction();
+        if (calibrationFocus.zone === "edges") {
+          const edgeKey = CALIBRATION_EDGES[calibrationFocus.index]?.key;
+          if (edgeKey) nudgeCalibration(edgeKey, 1);
+          return;
+        }
+
+        setCalibrationFocus((current) => moveCalibrationFocus(current, "right"));
+        return;
+      }
+
+      if (key === "enter" || key === "1" || key === "z") {
+        event.preventDefault();
+        noteInteraction();
+
+        if (calibrationFocus.zone === "actions") {
+          activateCalibrationAction(calibrationFocus.action);
+        }
+      }
+
+      return;
+    }
 
     if (isSettingsOpen) {
       if (editingField !== null) {
@@ -400,6 +549,11 @@ export default function App() {
 
         if (serviceFocus.zone === "field") {
           startEditingField(serviceFocus.key);
+          return;
+        }
+
+        if (serviceFocus.zone === "panelActions") {
+          activateServicePanelAction(serviceFocus.action);
           return;
         }
 
@@ -498,21 +652,21 @@ export default function App() {
 
   useEffect(() => {
     const id = window.setInterval(() => {
-      if (isSettingsOpen) return;
+      if (isServiceOpen) return;
       if (Date.now() - lastInteractionAtRef.current >= attractTimeoutMs) {
         setIsAttractMode(true);
       }
     }, 1_000);
     return () => window.clearInterval(id);
-  }, [attractTimeoutMs, isSettingsOpen]);
+  }, [attractTimeoutMs, isServiceOpen]);
 
   useEffect(() => {
-    if (!isAttractMode || isSettingsOpen || visibleGames.length <= 1) return;
+    if (!isAttractMode || isServiceOpen || visibleGames.length <= 1) return;
     const id = window.setInterval(() => {
       setSelectedIndex((current) => wrapIndex(current + 1, visibleGames.length));
     }, ATTRACT_MODE_STEP_MS);
     return () => window.clearInterval(id);
-  }, [isAttractMode, isSettingsOpen, visibleGames.length]);
+  }, [isAttractMode, isServiceOpen, visibleGames.length]);
 
   if (!selectedGame) return null;
 
@@ -578,6 +732,7 @@ export default function App() {
             fieldRefs={fieldRefs}
             onClose={closeSettings}
             onReset={resetSettingsDraft}
+            onOpenCalibration={openCalibration}
             onSave={() => activateServiceAction("save")}
             onSectionChange={(sectionId) => {
               setSettingsSection(sectionId);
@@ -597,6 +752,20 @@ export default function App() {
             }}
           />
         )}
+
+        {isCalibrationOpen && (
+          <CalibrationScreen
+            displayProfile={activeCabinetConfig.displayProfile}
+            settingsDraft={settingsDraft}
+            calibrationFocus={calibrationFocus}
+            status={settingsStatus}
+            onFocusChange={setCalibrationFocus}
+            onAdjust={nudgeCalibration}
+            onBack={closeCalibration}
+            onReset={resetCalibrationDraft}
+            onSave={() => activateCalibrationAction("save")}
+          />
+        )}
       </div>
     </div>
   );
@@ -607,6 +776,20 @@ type ServiceMenuStatus =
   | "saving"
   | { kind: "saved"; message: string }
   | { kind: "error"; message: string };
+
+function getStatusBadge(status: ServiceMenuStatus) {
+  return status === "idle"
+    ? { label: "Ready", tone: "var(--color-cab-mute)" }
+    : status === "saving"
+      ? { label: "Saving", tone: "var(--color-cab-accent)" }
+      : {
+          label: status.kind === "saved" ? "Saved" : "Error",
+          tone:
+            status.kind === "saved"
+              ? "var(--color-cab-ok)"
+              : "var(--color-cab-danger)",
+        };
+}
 
 function ModeBar({
   browseViews,
@@ -993,6 +1176,7 @@ function ServiceMenu({
   fieldRefs,
   onClose,
   onReset,
+  onOpenCalibration,
   onSave,
   onSectionChange,
   onFocusChange,
@@ -1011,6 +1195,7 @@ function ServiceMenu({
   >;
   onClose: () => void;
   onReset: () => void;
+  onOpenCalibration: () => void;
   onSave: () => void;
   onSectionChange: (section: ServiceSectionId) => void;
   onFocusChange: (focus: ServiceFocusTarget) => void;
@@ -1018,18 +1203,7 @@ function ServiceMenu({
   onFieldActivate: (field: ServiceFieldKey) => void;
   onFieldBlur: (field: ServiceFieldKey) => void;
 }) {
-  const statusBadge =
-    status === "idle"
-      ? { label: "Ready", tone: "var(--color-cab-mute)" }
-      : status === "saving"
-        ? { label: "Saving", tone: "var(--color-cab-accent)" }
-        : {
-            label: status.kind === "saved" ? "Saved" : "Error",
-            tone:
-              status.kind === "saved"
-                ? "var(--color-cab-ok)"
-                : "var(--color-cab-danger)",
-          };
+  const statusBadge = getStatusBadge(status);
 
   return (
     <div className="absolute inset-0 z-20 bg-[linear-gradient(180deg,rgba(3,5,9,0.72),rgba(0,0,0,0.94))]">
@@ -1301,7 +1475,7 @@ function ServiceMenu({
               {settingsSection === "display" && (
                 <SettingsSection
                   title="Display and Timing"
-                  subtitle="Tune idle behavior and the current CRT safe-area offsets."
+                  subtitle="Tune idle behavior here, then open the dedicated CRT calibration surface for live overscan work."
                 >
                   <FieldGroup>
                     <NumberInputField
@@ -1326,84 +1500,20 @@ function ServiceMenu({
                       onBlur={onFieldBlur}
                     />
 
-                    <div className="grid grid-cols-2 gap-[1.1cqw]">
-                      <NumberInputField
-                        id="topInsetPercent"
-                        fieldKey="topInsetPercent"
-                        label="Top inset %"
-                        name="topInsetPercent"
-                        min={0}
-                        max={25}
-                        value={settingsDraft.topInsetPercent}
-                        isFocused={
-                          serviceFocus.zone === "field" &&
-                          serviceFocus.key === "topInsetPercent"
-                        }
-                        isEditing={editingField === "topInsetPercent"}
-                        fieldRefs={fieldRefs}
-                        onChange={(value) => onChange("topInsetPercent", value)}
-                        onFocusChange={onFocusChange}
-                        onActivate={onFieldActivate}
-                        onBlur={onFieldBlur}
-                      />
-                      <NumberInputField
-                        id="rightInsetPercent"
-                        fieldKey="rightInsetPercent"
-                        label="Right inset %"
-                        name="rightInsetPercent"
-                        min={0}
-                        max={25}
-                        value={settingsDraft.rightInsetPercent}
-                        isFocused={
-                          serviceFocus.zone === "field" &&
-                          serviceFocus.key === "rightInsetPercent"
-                        }
-                        isEditing={editingField === "rightInsetPercent"}
-                        fieldRefs={fieldRefs}
-                        onChange={(value) => onChange("rightInsetPercent", value)}
-                        onFocusChange={onFocusChange}
-                        onActivate={onFieldActivate}
-                        onBlur={onFieldBlur}
-                      />
-                      <NumberInputField
-                        id="bottomInsetPercent"
-                        fieldKey="bottomInsetPercent"
-                        label="Bottom inset %"
-                        name="bottomInsetPercent"
-                        min={0}
-                        max={25}
-                        value={settingsDraft.bottomInsetPercent}
-                        isFocused={
-                          serviceFocus.zone === "field" &&
-                          serviceFocus.key === "bottomInsetPercent"
-                        }
-                        isEditing={editingField === "bottomInsetPercent"}
-                        fieldRefs={fieldRefs}
-                        onChange={(value) => onChange("bottomInsetPercent", value)}
-                        onFocusChange={onFocusChange}
-                        onActivate={onFieldActivate}
-                        onBlur={onFieldBlur}
-                      />
-                      <NumberInputField
-                        id="leftInsetPercent"
-                        fieldKey="leftInsetPercent"
-                        label="Left inset %"
-                        name="leftInsetPercent"
-                        min={0}
-                        max={25}
-                        value={settingsDraft.leftInsetPercent}
-                        isFocused={
-                          serviceFocus.zone === "field" &&
-                          serviceFocus.key === "leftInsetPercent"
-                        }
-                        isEditing={editingField === "leftInsetPercent"}
-                        fieldRefs={fieldRefs}
-                        onChange={(value) => onChange("leftInsetPercent", value)}
-                        onFocusChange={onFocusChange}
-                        onActivate={onFieldActivate}
-                        onBlur={onFieldBlur}
-                      />
-                    </div>
+                    <CalibrationLauncher
+                      settingsDraft={settingsDraft}
+                      isFocused={
+                        serviceFocus.zone === "panelActions" &&
+                        serviceFocus.action === "openCalibration"
+                      }
+                      onFocusChange={() =>
+                        onFocusChange({
+                          zone: "panelActions",
+                          action: "openCalibration",
+                        })
+                      }
+                      onOpen={onOpenCalibration}
+                    />
 
                     <InfoPanel
                       title="Active display profile"
@@ -1506,6 +1616,472 @@ function ServiceMenu({
         </div>
       </div>
     </div>
+  );
+}
+
+function CalibrationScreen({
+  displayProfile,
+  settingsDraft,
+  calibrationFocus,
+  status,
+  onFocusChange,
+  onAdjust,
+  onBack,
+  onReset,
+  onSave,
+}: {
+  displayProfile: string;
+  settingsDraft: CabinetConfigDraft;
+  calibrationFocus: CalibrationFocusTarget;
+  status: ServiceMenuStatus;
+  onFocusChange: (focus: CalibrationFocusTarget) => void;
+  onAdjust: (edge: CalibrationEdgeKey, delta: number) => void;
+  onBack: () => void;
+  onReset: () => void;
+  onSave: () => void;
+}) {
+  const statusBadge = getStatusBadge(status);
+  const previewInsets = getCalibrationPreviewInsets(settingsDraft);
+
+  return (
+    <div className="absolute inset-0 z-30 bg-[linear-gradient(180deg,rgba(1,2,5,0.82),rgba(0,0,0,0.98))]">
+      <div className="absolute inset-[1.8%] overflow-hidden border-[0.4cqh] border-cab-rule bg-[#03050a]/96">
+        <div
+          aria-hidden
+          className="absolute inset-0 opacity-60"
+          style={{
+            background:
+              "radial-gradient(circle at 50% 42%, rgba(248,216,79,0.09), transparent 38%), repeating-linear-gradient(180deg, rgba(255,255,255,0.025) 0, rgba(255,255,255,0.025) 1px, transparent 1px, transparent 7px)",
+          }}
+        />
+
+        <div className="relative grid h-full grid-rows-[auto_1fr_auto] gap-[2.2cqh] px-[2.4cqw] py-[2.4cqh]">
+          <div className="flex items-start justify-between gap-[2cqw] border-b-[0.4cqh] border-cab-rule pb-[1.7cqh]">
+            <div className="flex flex-col gap-[0.9cqh]">
+              <div
+                className="font-display tracking-[0.3em] text-cab-accent"
+                style={{ fontSize: "1.9cqh" }}
+              >
+                DISPLAY CALIBRATION
+              </div>
+              <div className="flex flex-col gap-[0.8cqh]">
+                <h2
+                  className="font-display text-cab-ink"
+                  style={{ fontSize: "5.4cqh" }}
+                >
+                  CRT SAFE-AREA AND OVERSCAN
+                </h2>
+                <p
+                  className="max-w-[76ch] font-sans text-cab-mute"
+                  style={{ fontSize: "2.05cqh", lineHeight: 1.25 }}
+                >
+                  Up and down choose an edge. Left and right nudge that edge by
+                  one percent. Save writes the live frame back into SQLite.
+                </p>
+              </div>
+            </div>
+
+            <div className="flex flex-col items-end gap-[1.1cqh]">
+              <div
+                className="rounded-full border-[0.28cqh] px-[1.2cqw] py-[0.55cqh] font-display tracking-[0.22em]"
+                style={{
+                  fontSize: "1.8cqh",
+                  color: statusBadge.tone,
+                  borderColor: statusBadge.tone,
+                }}
+              >
+                {statusBadge.label}
+              </div>
+              <div
+                className="font-sans text-cab-mute tabular-nums"
+                style={{ fontSize: "1.8cqh", lineHeight: 1.2 }}
+              >
+                PROFILE {displayProfile}
+              </div>
+            </div>
+          </div>
+
+          <div className="grid min-h-0 grid-cols-[13fr_29fr] gap-[2.5cqw]">
+            <aside className="flex min-h-0 flex-col gap-[1.2cqh] border-r-[0.4cqh] border-cab-rule pr-[1.8cqw]">
+              <div className="font-display text-cab-ink" style={{ fontSize: "2.5cqh" }}>
+                EDGE SELECT
+              </div>
+
+              <ul role="list" className="grid gap-[0.9cqh]">
+                {CALIBRATION_EDGES.map((edge, index) => {
+                  const isFocused =
+                    calibrationFocus.zone === "edges" &&
+                    calibrationFocus.index === index;
+                  return (
+                    <li key={edge.key} className="grid grid-cols-[1fr_auto_auto] gap-[0.7cqw]">
+                      <button
+                        type="button"
+                        tabIndex={-1}
+                        onClick={() => onFocusChange({ zone: "edges", index })}
+                        className="w-full rounded-none px-[1.2cqw] py-[1.05cqh] text-left ring-1 ring-cab-rule"
+                        style={{
+                          background: isFocused
+                            ? "linear-gradient(90deg, rgba(248,216,79,0.16), rgba(248,216,79,0.03))"
+                            : "rgba(255,255,255,0.02)",
+                          boxShadow: isFocused
+                            ? "0 0 0 0.32cqh rgba(248,216,79,0.34)"
+                            : "none",
+                        }}
+                      >
+                        <div className="flex items-baseline justify-between gap-[1cqw]">
+                          <div
+                            className="font-display text-cab-ink"
+                            style={{ fontSize: "2.55cqh" }}
+                          >
+                            {edge.label}
+                          </div>
+                          <div
+                            className="font-display text-cab-accent tabular-nums"
+                            style={{ fontSize: "2.5cqh" }}
+                          >
+                            {previewInsets[edge.key]}%
+                          </div>
+                        </div>
+                        <div
+                          className="mt-[0.45cqh] font-sans text-cab-mute"
+                          style={{ fontSize: "1.78cqh", lineHeight: 1.22 }}
+                        >
+                          {edge.detail}
+                        </div>
+                        <div
+                          className="mt-[0.6cqh] font-display tracking-[0.18em] text-cab-dim"
+                          style={{ fontSize: "1.7cqh" }}
+                        >
+                          ◂ DECREASE · ▸ INCREASE
+                        </div>
+                      </button>
+                      <button
+                        type="button"
+                        tabIndex={-1}
+                        onClick={() => {
+                          onFocusChange({ zone: "edges", index });
+                          onAdjust(edge.key, -1);
+                        }}
+                        className="rounded-none bg-[#0a0e14] px-[0.8cqw] py-[0.85cqh] font-display text-cab-mute ring-1 ring-cab-rule"
+                        style={{ fontSize: "2.2cqh" }}
+                      >
+                        ◂
+                      </button>
+                      <button
+                        type="button"
+                        tabIndex={-1}
+                        onClick={() => {
+                          onFocusChange({ zone: "edges", index });
+                          onAdjust(edge.key, 1);
+                        }}
+                        className="rounded-none bg-[#0a0e14] px-[0.8cqw] py-[0.85cqh] font-display text-cab-mute ring-1 ring-cab-rule"
+                        style={{ fontSize: "2.2cqh" }}
+                      >
+                        ▸
+                      </button>
+                    </li>
+                  );
+                })}
+              </ul>
+
+              <InfoPanel
+                title="Frame Goal"
+                body="Everything inside the bright safe-area frame should survive overscan on the cabinet CRT without clipping the browse chrome or service text."
+              />
+            </aside>
+
+            <section className="flex min-h-0 flex-col gap-[1.4cqh]">
+              <div className="flex items-center justify-between gap-[1.4cqw]">
+                <div
+                  className="font-display tracking-[0.22em] text-cab-ink"
+                  style={{ fontSize: "2.2cqh" }}
+                >
+                  LIVE FRAME PREVIEW
+                </div>
+                <div
+                  className="font-sans text-cab-mute tabular-nums"
+                  style={{ fontSize: "1.85cqh", lineHeight: 1.2 }}
+                >
+                  T {previewInsets.topInsetPercent}% · R {previewInsets.rightInsetPercent}% · B{" "}
+                  {previewInsets.bottomInsetPercent}% · L {previewInsets.leftInsetPercent}%
+                </div>
+              </div>
+
+              <div className="relative min-h-0 flex-1 overflow-hidden border-[0.4cqh] border-cab-rule bg-[#04070d]">
+                <div
+                  aria-hidden
+                  className="absolute inset-0"
+                  style={{
+                    background:
+                      "radial-gradient(circle at 50% 46%, rgba(248,216,79,0.08), transparent 34%), linear-gradient(180deg, rgba(255,255,255,0.03), transparent 20%), repeating-linear-gradient(90deg, rgba(255,255,255,0.02) 0, rgba(255,255,255,0.02) 1px, transparent 1px, transparent 6cqw), repeating-linear-gradient(180deg, rgba(255,255,255,0.02) 0, rgba(255,255,255,0.02) 1px, transparent 1px, transparent 6cqh)",
+                  }}
+                />
+                <div
+                  aria-hidden
+                  className="absolute left-1/2 top-[5%] bottom-[5%] w-[0.16cqh] -translate-x-1/2 bg-cab-rule"
+                  style={{ opacity: 0.55 }}
+                />
+                <div
+                  aria-hidden
+                  className="absolute left-[5%] right-[5%] top-1/2 h-[0.16cqh] -translate-y-1/2 bg-cab-rule"
+                  style={{ opacity: 0.55 }}
+                />
+
+                {[
+                  { label: "TL", top: "5.2%", left: "5.4%" },
+                  { label: "TR", top: "5.2%", right: "5.4%" },
+                  { label: "BL", bottom: "5.2%", left: "5.4%" },
+                  { label: "BR", bottom: "5.2%", right: "5.4%" },
+                ].map(({ label, ...position }) => (
+                  <div
+                    key={label}
+                    className="absolute font-display tracking-[0.22em] text-cab-dim"
+                    style={{
+                      ...position,
+                      fontSize: "1.9cqh",
+                    }}
+                  >
+                    {label}
+                  </div>
+                ))}
+
+                <div
+                  className="absolute border-[0.42cqh] border-cab-accent"
+                  style={{
+                    top: `${previewInsets.topInsetPercent}%`,
+                    right: `${previewInsets.rightInsetPercent}%`,
+                    bottom: `${previewInsets.bottomInsetPercent}%`,
+                    left: `${previewInsets.leftInsetPercent}%`,
+                    boxShadow: "0 0 0 0.32cqh rgba(248,216,79,0.24)",
+                  }}
+                >
+                  <div
+                    className="absolute left-1/2 top-0 -translate-x-1/2 -translate-y-[145%] rounded-none bg-black/85 px-[0.8cqw] py-[0.3cqh] font-display text-cab-accent tabular-nums"
+                    style={{ fontSize: "1.75cqh" }}
+                  >
+                    TOP {previewInsets.topInsetPercent}%
+                  </div>
+                  <div
+                    className="absolute right-0 top-1/2 translate-x-[112%] -translate-y-1/2 rounded-none bg-black/85 px-[0.8cqw] py-[0.3cqh] font-display text-cab-accent tabular-nums"
+                    style={{ fontSize: "1.75cqh" }}
+                  >
+                    RIGHT {previewInsets.rightInsetPercent}%
+                  </div>
+                  <div
+                    className="absolute bottom-0 left-1/2 -translate-x-1/2 translate-y-[145%] rounded-none bg-black/85 px-[0.8cqw] py-[0.3cqh] font-display text-cab-accent tabular-nums"
+                    style={{ fontSize: "1.75cqh" }}
+                  >
+                    BOTTOM {previewInsets.bottomInsetPercent}%
+                  </div>
+                  <div
+                    className="absolute left-0 top-1/2 -translate-x-[112%] -translate-y-1/2 rounded-none bg-black/85 px-[0.8cqw] py-[0.3cqh] font-display text-cab-accent tabular-nums"
+                    style={{ fontSize: "1.75cqh" }}
+                  >
+                    LEFT {previewInsets.leftInsetPercent}%
+                  </div>
+
+                  <div
+                    aria-hidden
+                    className="absolute inset-[1.8cqh] border-[0.24cqh] border-dashed border-cab-rule"
+                    style={{ opacity: 0.65 }}
+                  />
+                  <div className="absolute inset-0 grid place-items-center px-[3cqw] text-center">
+                    <div className="flex flex-col items-center gap-[1.2cqh]">
+                      <div
+                        className="font-display tracking-[0.32em] text-cab-accent"
+                        style={{ fontSize: "2.2cqh" }}
+                      >
+                        SAFE AREA
+                      </div>
+                      <div
+                        className="font-display text-cab-ink"
+                        style={{ fontSize: "6.6cqh", lineHeight: 0.92 }}
+                      >
+                        KEEP ALL UI INSIDE
+                      </div>
+                      <p
+                        className="max-w-[44cqw] font-sans text-cab-mute"
+                        style={{ fontSize: "2.05cqh", lineHeight: 1.22 }}
+                      >
+                        This bright frame represents the persisted inset values.
+                        Keep the mode bar, list marker, preview labels, and
+                        control footer inside it on the physical display.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </section>
+          </div>
+
+          <div className="grid grid-cols-[1fr_auto] items-center gap-[2cqw] border-t-[0.4cqh] border-cab-rule pt-[1.6cqh]">
+            <div
+              className="font-sans text-cab-mute"
+              style={{ fontSize: "1.9cqh", lineHeight: 1.25 }}
+            >
+              {status === "idle"
+                ? "Left and right adjust the selected edge live. Back returns to service mode without closing the hidden admin surface."
+                : status === "saving"
+                  ? "Persisting display calibration."
+                  : status.message}
+            </div>
+
+            <div className="flex items-center gap-[1cqw]">
+              <button
+                type="button"
+                tabIndex={-1}
+                onClick={onBack}
+                className="rounded-none bg-transparent px-[1.2cqw] py-[0.85cqh] font-display text-cab-mute ring-1 ring-cab-rule"
+                style={{
+                  fontSize: "1.9cqh",
+                  color:
+                    calibrationFocus.zone === "actions" &&
+                    calibrationFocus.action === "back"
+                      ? "var(--color-cab-ink)"
+                      : "var(--color-cab-mute)",
+                  boxShadow:
+                    calibrationFocus.zone === "actions" &&
+                    calibrationFocus.action === "back"
+                      ? "0 0 0 0.32cqh rgba(248,216,79,0.34)"
+                      : "none",
+                  background:
+                    calibrationFocus.zone === "actions" &&
+                    calibrationFocus.action === "back"
+                      ? "rgba(248,216,79,0.08)"
+                      : "transparent",
+                }}
+              >
+                BACK TO SERVICE
+              </button>
+              <button
+                type="button"
+                tabIndex={-1}
+                onClick={onReset}
+                className="rounded-none bg-transparent px-[1.2cqw] py-[0.85cqh] font-display text-cab-mute ring-1 ring-cab-rule"
+                style={{
+                  fontSize: "1.9cqh",
+                  color:
+                    calibrationFocus.zone === "actions" &&
+                    calibrationFocus.action === "defaults"
+                      ? "var(--color-cab-ink)"
+                      : "var(--color-cab-mute)",
+                  boxShadow:
+                    calibrationFocus.zone === "actions" &&
+                    calibrationFocus.action === "defaults"
+                      ? "0 0 0 0.32cqh rgba(248,216,79,0.34)"
+                      : "none",
+                  background:
+                    calibrationFocus.zone === "actions" &&
+                    calibrationFocus.action === "defaults"
+                      ? "rgba(248,216,79,0.08)"
+                      : "transparent",
+                }}
+              >
+                DEFAULT FRAME
+              </button>
+              <button
+                type="button"
+                tabIndex={-1}
+                onClick={onSave}
+                className="rounded-none bg-cab-accent px-[1.4cqw] py-[0.85cqh] font-display text-black ring-1 ring-cab-accent"
+                style={{
+                  fontSize: "2cqh",
+                  boxShadow:
+                    calibrationFocus.zone === "actions" &&
+                    calibrationFocus.action === "save"
+                      ? "0 0 0 0.32cqh rgba(248,216,79,0.34)"
+                      : "none",
+                  filter:
+                    calibrationFocus.zone === "actions" &&
+                    calibrationFocus.action === "save"
+                      ? "brightness(1.05)"
+                      : "none",
+                }}
+              >
+                SAVE TO SQLITE
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function CalibrationLauncher({
+  settingsDraft,
+  isFocused,
+  onFocusChange,
+  onOpen,
+}: {
+  settingsDraft: CabinetConfigDraft;
+  isFocused: boolean;
+  onFocusChange: () => void;
+  onOpen: () => void;
+}) {
+  const previewInsets = getCalibrationPreviewInsets(settingsDraft);
+
+  return (
+    <button
+      type="button"
+      tabIndex={-1}
+      onClick={() => {
+        onFocusChange();
+        onOpen();
+      }}
+      className="grid gap-[1.1cqh] rounded-none px-[1.2cqw] py-[1.2cqh] text-left ring-1 ring-cab-rule"
+      style={{
+        background: isFocused
+          ? "linear-gradient(90deg, rgba(248,216,79,0.16), rgba(248,216,79,0.03))"
+          : "rgba(255,255,255,0.02)",
+        boxShadow: isFocused
+          ? "0 0 0 0.32cqh rgba(248,216,79,0.34)"
+          : "none",
+      }}
+    >
+      <div className="flex items-start justify-between gap-[1.4cqw]">
+        <div className="grid gap-[0.45cqh]">
+          <div className="font-display text-cab-ink" style={{ fontSize: "2.5cqh" }}>
+            OPEN CALIBRATION SCREEN
+          </div>
+          <div
+            className="max-w-[56ch] font-sans text-cab-mute"
+            style={{ fontSize: "1.88cqh", lineHeight: 1.22 }}
+          >
+            Use the live frame preview to set overscan-safe insets against real
+            cabinet geometry instead of editing raw numbers blind.
+          </div>
+        </div>
+        <div
+          className="font-display tracking-[0.2em] text-cab-accent"
+          style={{ fontSize: "1.85cqh" }}
+        >
+          PRESS START
+        </div>
+      </div>
+
+      <div className="grid grid-cols-4 gap-[0.8cqw]">
+        {CALIBRATION_EDGES.map((edge) => (
+          <div
+            key={edge.key}
+            className="bg-[#0a0e14] px-[0.8cqw] py-[0.75cqh] ring-1 ring-cab-rule"
+          >
+            <div
+              className="font-display text-cab-mute"
+              style={{ fontSize: "1.65cqh" }}
+            >
+              {edge.label}
+            </div>
+            <div
+              className="font-display text-cab-accent tabular-nums"
+              style={{ fontSize: "2.3cqh" }}
+            >
+              {previewInsets[edge.key]}%
+            </div>
+          </div>
+        ))}
+      </div>
+    </button>
   );
 }
 

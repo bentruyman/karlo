@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 
 import {
   getServiceFieldKeys,
+  getServicePanelActions,
   getServiceSectionIndex,
   moveServiceFocus,
   SERVICE_SECTIONS,
@@ -18,6 +19,7 @@ describe("service navigation metadata", () => {
     ]);
     expect(getServiceSectionIndex("display")).toBe(2);
     expect(getServiceFieldKeys("storage")).toEqual([]);
+    expect(getServicePanelActions("display")).toEqual(["openCalibration"]);
   });
 });
 
@@ -51,16 +53,13 @@ describe("moveServiceFocus", () => {
   });
 
   test("moves through editable fields and into footer actions", () => {
-    let current: ServiceFocusTarget = { zone: "field", key: "topInsetPercent" };
+    let current: ServiceFocusTarget = {
+      zone: "field",
+      key: "attractTimeoutSeconds",
+    };
 
     current = moveServiceFocus(current, "down", "display");
-    expect(current).toEqual({ zone: "field", key: "rightInsetPercent" });
-
-    current = moveServiceFocus(current, "down", "display");
-    expect(current).toEqual({ zone: "field", key: "bottomInsetPercent" });
-
-    current = moveServiceFocus(current, "down", "display");
-    expect(current).toEqual({ zone: "field", key: "leftInsetPercent" });
+    expect(current).toEqual({ zone: "panelActions", action: "openCalibration" });
 
     current = moveServiceFocus(current, "down", "display");
     expect(current).toEqual({ zone: "actions", action: "defaults" });
@@ -79,6 +78,13 @@ describe("moveServiceFocus", () => {
     ).toEqual({
       zone: "sections",
       index: 3,
+    });
+
+    expect(
+      moveServiceFocus({ zone: "actions", action: "defaults" }, "left", "display"),
+    ).toEqual({
+      zone: "panelActions",
+      action: "openCalibration",
     });
   });
 });

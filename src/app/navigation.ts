@@ -6,12 +6,15 @@ export type ServiceSectionId = "launch" | "media" | "display" | "storage";
 
 export type ServiceActionId = "defaults" | "save";
 
+export type ServicePanelActionId = "openCalibration";
+
 export type ServiceFieldKey = keyof CabinetConfigDraft;
 
 export type ServiceFocusTarget =
   | { zone: "close" }
   | { zone: "sections"; index: number }
   | { zone: "field"; key: ServiceFieldKey }
+  | { zone: "panelActions"; action: ServicePanelActionId }
   | { zone: "actions"; action: ServiceActionId };
 
 export type ServiceMoveDirection = "up" | "down" | "left" | "right" | "enter";
@@ -38,13 +41,13 @@ const SERVICE_SECTION_FIELDS: Record<
     "previewVideoRoot",
     "artworkRoot",
   ],
-  display: [
-    "attractTimeoutSeconds",
-    "topInsetPercent",
-    "rightInsetPercent",
-    "bottomInsetPercent",
-    "leftInsetPercent",
-  ],
+  display: ["attractTimeoutSeconds"],
+};
+
+const SERVICE_SECTION_PANEL_ACTIONS: Partial<
+  Record<ServiceSectionId, ServicePanelActionId[]>
+> = {
+  display: ["openCalibration"],
 };
 
 export function getServiceSectionIndex(sectionId: ServiceSectionId) {
@@ -56,6 +59,12 @@ export function getServiceFieldKeys(sectionId: ServiceSectionId): ServiceFieldKe
   return SERVICE_SECTION_FIELDS[sectionId];
 }
 
+export function getServicePanelActions(
+  sectionId: ServiceSectionId,
+): ServicePanelActionId[] {
+  return SERVICE_SECTION_PANEL_ACTIONS[sectionId] ?? [];
+}
+
 export function moveServiceFocus(
   current: ServiceFocusTarget,
   direction: ServiceMoveDirection,
@@ -63,6 +72,22 @@ export function moveServiceFocus(
 ): ServiceFocusTarget {
   const activeSectionIndex = getServiceSectionIndex(activeSection);
   const visibleFields = getServiceFieldKeys(activeSection);
+  const visiblePanelActions = getServicePanelActions(activeSection);
+
+  function firstSectionTarget(sectionId: ServiceSectionId): ServiceFocusTarget {
+    const sectionFields = getServiceFieldKeys(sectionId);
+    const sectionPanelActions = getServicePanelActions(sectionId);
+
+    if (sectionFields.length > 0) {
+      return { zone: "field", key: sectionFields[0] };
+    }
+
+    if (sectionPanelActions.length > 0) {
+      return { zone: "panelActions", action: sectionPanelActions[0] };
+    }
+
+    return { zone: "actions", action: "defaults" };
+  }
 
   if (current.zone === "close") {
     if (direction === "right" || direction === "down") {
@@ -72,6 +97,8 @@ export function moveServiceFocus(
   }
 
   if (current.zone === "sections") {
+    const sectionId = SERVICE_SECTIONS[current.index]?.id ?? activeSection;
+
     if (direction === "left") return { zone: "close" };
 
     if (direction === "up") {
@@ -84,15 +111,11 @@ export function moveServiceFocus(
       if (current.index < SERVICE_SECTIONS.length - 1) {
         return { zone: "sections", index: current.index + 1 };
       }
-      return visibleFields.length > 0
-        ? { zone: "field", key: visibleFields[0] }
-        : { zone: "actions", action: "defaults" };
+      return firstSectionTarget(sectionId);
     }
 
     if (direction === "right" || direction === "enter") {
-      return visibleFields.length > 0
-        ? { zone: "field", key: visibleFields[0] }
-        : { zone: "actions", action: "defaults" };
+      return firstSectionTarget(sectionId);
     }
 
     return current;
@@ -111,7 +134,9 @@ export function moveServiceFocus(
     }
 
     if (direction === "right") {
-      return { zone: "actions", action: "defaults" };
+      return visiblePanelActions.length > 0
+        ? { zone: "panelActions", action: visiblePanelActions[0] }
+        : { zone: "actions", action: "defaults" };
     }
 
     if (direction === "up") {
@@ -122,8 +147,43 @@ export function moveServiceFocus(
 
     if (direction === "down") {
       return currentIndex === visibleFields.length - 1
-        ? { zone: "actions", action: "defaults" }
+        ? visiblePanelActions.length > 0
+          ? { zone: "panelActions", action: visiblePanelActions[0] }
+          : { zone: "actions", action: "defaults" }
         : { zone: "field", key: visibleFields[currentIndex + 1] };
+    }
+
+    return current;
+  }
+
+  if (current.zone === "panelActions") {
+    const currentIndex = visiblePanelActions.indexOf(current.action);
+    if (currentIndex === -1) {
+      return visiblePanelActions.length > 0
+        ? { zone: "panelActions", action: visiblePanelActions[0] }
+        : { zone: "sections", index: activeSectionIndex };
+    }
+
+    if (direction === "left") {
+      return visibleFields.length > 0
+        ? { zone: "field", key: visibleFields[visibleFields.length - 1] }
+        : { zone: "sections", index: activeSectionIndex };
+    }
+
+    if (direction === "right") {
+      return { zone: "actions", action: "defaults" };
+    }
+
+    if (direction === "up") {
+      return visibleFields.length > 0
+        ? { zone: "field", key: visibleFields[visibleFields.length - 1] }
+        : { zone: "sections", index: activeSectionIndex };
+    }
+
+    if (direction === "down") {
+      return currentIndex === visiblePanelActions.length - 1
+        ? { zone: "actions", action: "defaults" }
+        : { zone: "panelActions", action: visiblePanelActions[currentIndex + 1] };
     }
 
     return current;
@@ -131,9 +191,16 @@ export function moveServiceFocus(
 
   if (direction === "left") {
     if (current.action === "save") return { zone: "actions", action: "defaults" };
-    return visibleFields.length > 0
-      ? { zone: "field", key: visibleFields[visibleFields.length - 1] }
-      : { zone: "sections", index: activeSectionIndex };
+    if (visiblePanelActions.length > 0) {
+      return {
+        zone: "panelActions",
+        action: visiblePanelActions[visiblePanelActions.length - 1],
+      };
+    }
+    if (visibleFields.length > 0) {
+      return { zone: "field", key: visibleFields[visibleFields.length - 1] };
+    }
+    return { zone: "sections", index: activeSectionIndex };
   }
 
   if (direction === "right") {
@@ -143,9 +210,16 @@ export function moveServiceFocus(
   }
 
   if (direction === "up") {
-    return visibleFields.length > 0
-      ? { zone: "field", key: visibleFields[visibleFields.length - 1] }
-      : { zone: "sections", index: activeSectionIndex };
+    if (visiblePanelActions.length > 0) {
+      return {
+        zone: "panelActions",
+        action: visiblePanelActions[visiblePanelActions.length - 1],
+      };
+    }
+    if (visibleFields.length > 0) {
+      return { zone: "field", key: visibleFields[visibleFields.length - 1] };
+    }
+    return { zone: "sections", index: activeSectionIndex };
   }
 
   return current;
