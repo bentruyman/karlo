@@ -5,6 +5,7 @@ import {
   useMemo,
   useRef,
   useState,
+  type MutableRefObject,
   type ReactNode,
 } from "react";
 
@@ -26,6 +27,16 @@ import {
   parseCabinetConfigDraft,
   type CabinetConfigDraft,
 } from "./app/cabinet-config";
+import {
+  getServiceSectionIndex,
+  moveServiceFocus,
+  SERVICE_SECTIONS,
+  type BrowseFocusZone,
+  type ServiceActionId,
+  type ServiceFieldKey,
+  type ServiceFocusTarget,
+  type ServiceSectionId,
+} from "./app/navigation";
 import {
   buildGameRecords,
   getGamesForView,
@@ -60,9 +71,16 @@ export default function App() {
   const [importedGames] = useState(mockImportedGames);
   const [libraryEntries, setLibraryEntries] = useState(mockLibraryEntries);
   const [recentGames] = useState(mockRecentGames);
+  const [browseFocusZone, setBrowseFocusZone] =
+    useState<BrowseFocusZone>("gameList");
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [settingsSection, setSettingsSection] =
     useState<ServiceSectionId>("launch");
+  const [serviceFocus, setServiceFocus] = useState<ServiceFocusTarget>({
+    zone: "sections",
+    index: getServiceSectionIndex("launch"),
+  });
+  const [editingField, setEditingField] = useState<ServiceFieldKey | null>(null);
   const [settingsDraft, setSettingsDraft] = useState<CabinetConfigDraft>(() =>
     cabinetConfigToDraft(DEFAULT_FRONTEND_BOOTSTRAP.cabinetConfig),
   );
@@ -80,6 +98,10 @@ export default function App() {
   const [isAttractMode, setIsAttractMode] = useState(false);
   const lastInteractionAtRef = useRef(Date.now());
   const serviceCodePressesRef = useRef<number[]>([]);
+  const browseFocusBeforeSettingsRef = useRef<BrowseFocusZone>("gameList");
+  const fieldRefs = useRef<
+    Partial<Record<ServiceFieldKey, HTMLInputElement | HTMLTextAreaElement | null>>
+  >({});
 
   const browseViews = bootstrap.curation.browseViews;
   const games = useMemo(
@@ -122,13 +144,62 @@ export default function App() {
     setSelectedIndex((current) => clampIndex(current, visibleGames.length));
   }, [visibleGames.length]);
 
+  useEffect(() => {
+    if (!isSettingsOpen || serviceFocus.zone !== "field") return;
+
+    const nextSection = SERVICE_SECTIONS.find(
+      (section) => section.id === settingsSection,
+    );
+    if (!nextSection) return;
+
+    const nextFocus = moveServiceFocus(serviceFocus, "enter", nextSection.id);
+    if (nextFocus.zone === "field" && nextFocus.key === serviceFocus.key) return;
+
+    setServiceFocus(nextFocus);
+  }, [isSettingsOpen, serviceFocus, settingsSection]);
+
   const activeSelectedIndex = clampIndex(selectedIndex, visibleGames.length);
   const selectedGame = visibleGames[activeSelectedIndex] ?? visibleGames[0];
   const activeCabinetConfig = bootstrap.cabinetConfig;
+  const activeServiceSectionIndex = getServiceSectionIndex(settingsSection);
 
   function noteInteraction() {
     lastInteractionAtRef.current = Date.now();
     if (isAttractMode) setIsAttractMode(false);
+  }
+
+  function applyServiceFocus(nextFocus: ServiceFocusTarget) {
+    setServiceFocus(nextFocus);
+
+    if (nextFocus.zone === "sections") {
+      setSettingsSection(SERVICE_SECTIONS[nextFocus.index].id);
+    }
+  }
+
+  function stopEditingField() {
+    if (document.activeElement instanceof HTMLElement) {
+      document.activeElement.blur();
+    }
+    setEditingField(null);
+  }
+
+  function startEditingField(fieldKey: ServiceFieldKey) {
+    setServiceFocus({ zone: "field", key: fieldKey });
+    setEditingField(fieldKey);
+
+    requestAnimationFrame(() => {
+      fieldRefs.current[fieldKey]?.focus();
+      fieldRefs.current[fieldKey]?.select?.();
+    });
+  }
+
+  function activateServiceAction(action: ServiceActionId) {
+    if (action === "defaults") {
+      resetSettingsDraft();
+      return;
+    }
+
+    void commitSettings();
   }
 
   function cycleView(direction: 1 | -1) {
@@ -183,9 +254,15 @@ export default function App() {
 
   const openSettings = useEffectEvent(async () => {
     noteInteraction();
+    browseFocusBeforeSettingsRef.current = browseFocusZone;
     setIsAttractMode(false);
     setSettingsStatus("idle");
     setSettingsSection("launch");
+    setServiceFocus({
+      zone: "sections",
+      index: getServiceSectionIndex("launch"),
+    });
+    setEditingField(null);
     setIsSettingsOpen(true);
 
     const cabinetConfig = await loadCabinetConfig();
@@ -194,8 +271,10 @@ export default function App() {
   });
 
   function closeSettings() {
+    stopEditingField();
     setIsSettingsOpen(false);
     setSettingsStatus("idle");
+    setBrowseFocusZone(browseFocusBeforeSettingsRef.current);
   }
 
   function resetSettingsDraft() {
@@ -253,6 +332,16 @@ export default function App() {
         target.isContentEditable);
 
     if (isSettingsOpen) {
+      if (editingField !== null) {
+        if (key === "escape") {
+          event.preventDefault();
+          stopEditingField();
+          return;
+        }
+
+        return;
+      }
+
       if (key === "escape") {
         event.preventDefault();
         closeSettings();
@@ -266,6 +355,58 @@ export default function App() {
       }
 
       if (isEditableTarget) return;
+
+      if (key === "arrowup") {
+        event.preventDefault();
+        noteInteraction();
+        applyServiceFocus(moveServiceFocus(serviceFocus, "up", settingsSection));
+        return;
+      }
+
+      if (key === "arrowdown") {
+        event.preventDefault();
+        noteInteraction();
+        applyServiceFocus(moveServiceFocus(serviceFocus, "down", settingsSection));
+        return;
+      }
+
+      if (key === "arrowleft") {
+        event.preventDefault();
+        noteInteraction();
+        applyServiceFocus(moveServiceFocus(serviceFocus, "left", settingsSection));
+        return;
+      }
+
+      if (key === "arrowright") {
+        event.preventDefault();
+        noteInteraction();
+        applyServiceFocus(moveServiceFocus(serviceFocus, "right", settingsSection));
+        return;
+      }
+
+      if (key === "enter" || key === "1" || key === "z") {
+        event.preventDefault();
+        noteInteraction();
+
+        if (serviceFocus.zone === "close") {
+          closeSettings();
+          return;
+        }
+
+        if (serviceFocus.zone === "sections") {
+          applyServiceFocus(moveServiceFocus(serviceFocus, "enter", settingsSection));
+          return;
+        }
+
+        if (serviceFocus.zone === "field") {
+          startEditingField(serviceFocus.key);
+          return;
+        }
+
+        activateServiceAction(serviceFocus.action);
+        return;
+      }
+
       return;
     }
 
@@ -281,27 +422,46 @@ export default function App() {
       case "arrowup":
         event.preventDefault();
         noteInteraction();
+        if (browseFocusZone === "modeBar" || activeSelectedIndex === 0) {
+          setBrowseFocusZone("modeBar");
+          return;
+        }
         stepSelection(-1);
         return;
       case "arrowdown":
         event.preventDefault();
         noteInteraction();
+        if (browseFocusZone === "modeBar") {
+          setBrowseFocusZone("gameList");
+          return;
+        }
         stepSelection(1);
         return;
       case "arrowleft":
         event.preventDefault();
         noteInteraction();
+        if (browseFocusZone === "modeBar") {
+          cycleView(-1);
+          return;
+        }
         nextLetter(-1);
         return;
       case "arrowright":
         event.preventDefault();
         noteInteraction();
+        if (browseFocusZone === "modeBar") {
+          cycleView(1);
+          return;
+        }
         nextLetter(1);
         return;
       case "enter":
       case "1":
       case "z":
         noteInteraction();
+        if (browseFocusZone === "modeBar") {
+          setBrowseFocusZone("gameList");
+        }
         return;
       case "x":
         event.preventDefault();
@@ -312,17 +472,20 @@ export default function App() {
       case " ":
         event.preventDefault();
         noteInteraction();
+        setBrowseFocusZone("modeBar");
         cycleView(1);
         return;
       case "v":
         event.preventDefault();
         noteInteraction();
+        setBrowseFocusZone("modeBar");
         cycleView(-1);
         return;
       case "b":
       case "5":
         event.preventDefault();
         noteInteraction();
+        setBrowseFocusZone("modeBar");
         jumpToView("favorites");
         return;
     }
@@ -381,6 +544,8 @@ export default function App() {
           <ModeBar
             browseViews={browseViews}
             activeIndex={viewIndex}
+            isFocused={browseFocusZone === "modeBar"}
+            onFocusZone={() => setBrowseFocusZone("modeBar")}
             onSelect={jumpToView}
           />
 
@@ -388,8 +553,10 @@ export default function App() {
             <ListColumn
               games={visibleGames}
               selectedIndex={activeSelectedIndex}
+              isFocused={browseFocusZone === "gameList"}
               currentBucket={currentBucket}
               bucketsPresent={bucketsPresent}
+              onFocusZone={() => setBrowseFocusZone("gameList")}
               onSelect={setSelection}
               fallbackLabel={visibleState.fallbackLabel}
             />
@@ -405,14 +572,28 @@ export default function App() {
             cabinetConfig={activeCabinetConfig}
             settingsDraft={settingsDraft}
             settingsSection={settingsSection}
+            serviceFocus={serviceFocus}
+            editingField={editingField}
             status={settingsStatus}
+            fieldRefs={fieldRefs}
             onClose={closeSettings}
             onReset={resetSettingsDraft}
-            onSave={() => void commitSettings()}
-            onSectionChange={setSettingsSection}
+            onSave={() => activateServiceAction("save")}
+            onSectionChange={(sectionId) => {
+              setSettingsSection(sectionId);
+              applyServiceFocus({
+                zone: "sections",
+                index: getServiceSectionIndex(sectionId),
+              });
+            }}
+            onFocusChange={applyServiceFocus}
             onChange={(field, value) => {
               setSettingsDraft((current) => ({ ...current, [field]: value }));
               setSettingsStatus("idle");
+            }}
+            onFieldActivate={startEditingField}
+            onFieldBlur={(fieldKey) => {
+              setEditingField((current) => (current === fieldKey ? null : current));
             }}
           />
         )}
@@ -420,8 +601,6 @@ export default function App() {
     </div>
   );
 }
-
-type ServiceSectionId = "launch" | "media" | "display" | "storage";
 
 type ServiceMenuStatus =
   | "idle"
@@ -432,26 +611,45 @@ type ServiceMenuStatus =
 function ModeBar({
   browseViews,
   activeIndex,
+  isFocused,
+  onFocusZone,
   onSelect,
 }: {
   browseViews: BrowseView[];
   activeIndex: number;
+  isFocused: boolean;
+  onFocusZone: () => void;
   onSelect: (id: BrowseViewId) => void;
 }) {
   return (
-    <div className="flex items-end gap-[3cqw] border-b-[0.4cqh] border-cab-rule pb-[1.2cqh]">
-      <ul className="flex items-end gap-[2.6cqw]">
+    <div
+      className="flex items-end gap-[3cqw] border-b-[0.4cqh] border-cab-rule pb-[1.2cqh]"
+      data-focus-zone={isFocused || undefined}
+    >
+      <ul role="list" className="flex items-end gap-[2.6cqw]">
         {browseViews.map((view, index) => {
           const isActive = index === activeIndex;
           return (
             <li key={view.id} className="relative">
               <button
                 type="button"
-                onClick={() => onSelect(view.id)}
-                className="font-display leading-none transition-colors"
+                tabIndex={-1}
+                onClick={() => {
+                  onFocusZone();
+                  onSelect(view.id);
+                }}
+                className="rounded-none px-[0.7cqw] py-[0.55cqh] font-display leading-none transition-colors"
                 style={{
                   fontSize: "3.6cqh",
                   color: isActive ? "var(--color-cab-ink)" : "var(--color-cab-mute)",
+                  background:
+                    isFocused && isActive
+                      ? "rgba(248,216,79,0.08)"
+                      : "transparent",
+                  boxShadow:
+                    isFocused && isActive
+                      ? "0 0 0 0.35cqh rgba(248,216,79,0.42)"
+                      : "none",
                 }}
               >
                 {view.label}
@@ -460,6 +658,7 @@ function ModeBar({
                 <span
                   aria-hidden
                   className="absolute -bottom-[1.6cqh] left-0 right-0 h-[0.6cqh] bg-cab-accent"
+                  style={{ opacity: isFocused ? 1 : 0.55 }}
                 />
               )}
             </li>
@@ -473,15 +672,19 @@ function ModeBar({
 function ListColumn({
   games,
   selectedIndex,
+  isFocused,
   currentBucket,
   bucketsPresent,
+  onFocusZone,
   onSelect,
   fallbackLabel,
 }: {
   games: GameRecord[];
   selectedIndex: number;
+  isFocused: boolean;
   currentBucket: string;
   bucketsPresent: Set<string>;
+  onFocusZone: () => void;
   onSelect: (index: number) => void;
   fallbackLabel?: string;
 }) {
@@ -514,7 +717,10 @@ function ListColumn({
         </div>
       )}
 
-      <ul className="flex-1 flex flex-col justify-start gap-[0.8cqh] min-h-0 overflow-hidden">
+      <ul
+        role="list"
+        className="flex-1 flex flex-col justify-start gap-[0.8cqh] min-h-0 overflow-hidden"
+      >
         {rows.map((game, i) => {
           const absoluteIndex = windowStart + i;
           const isActive = absoluteIndex === selectedIndex;
@@ -525,7 +731,10 @@ function ListColumn({
                 className="font-display leading-none"
                 style={{
                   fontSize: "3.2cqh",
-                  color: isActive ? "var(--color-cab-accent)" : "transparent",
+                  color:
+                    isActive && isFocused
+                      ? "var(--color-cab-accent)"
+                      : "transparent",
                   width: "2.4cqw",
                 }}
               >
@@ -533,25 +742,57 @@ function ListColumn({
               </span>
               <button
                 type="button"
-                onClick={() => onSelect(absoluteIndex)}
-                className="flex-1 flex items-baseline gap-[1cqw] font-display text-left leading-[0.95] tracking-[0.01em]"
+                tabIndex={-1}
+                onClick={() => {
+                  onFocusZone();
+                  onSelect(absoluteIndex);
+                }}
+                className="flex-1 rounded-none px-[0.7cqw] py-[0.35cqh] text-left"
                 style={{
-                  fontSize: isActive ? "3.6cqh" : "2.6cqh",
-                  fontWeight: isActive ? 700 : 400,
-                  color: isActive ? "var(--color-cab-ink)" : "var(--color-cab-mute)",
+                  background:
+                    isActive && isFocused
+                      ? "linear-gradient(90deg, rgba(248,216,79,0.14), rgba(248,216,79,0.02))"
+                      : "transparent",
+                  boxShadow:
+                    isActive && isFocused
+                      ? "0 0 0 0.32cqh rgba(248,216,79,0.34)"
+                      : "none",
                 }}
               >
-                <span className="truncate">{game.title}</span>
-                {game.isFavorite && (
-                  <span
-                    aria-hidden
+                <div
+                  className="flex items-baseline gap-[1cqw] font-display tracking-[0.01em]"
+                  style={{
+                    fontSize: isActive ? "3.6cqh" : "2.6cqh",
+                    fontWeight: isActive ? 700 : 400,
+                    color:
+                      isActive
+                        ? "var(--color-cab-ink)"
+                        : "var(--color-cab-mute)",
+                  }}
+                >
+                  <span className="truncate">{game.title}</span>
+                  {game.isFavorite && (
+                    <span
+                      aria-hidden
+                      style={{
+                        fontSize: "2cqh",
+                        color: "var(--color-cab-accent)",
+                      }}
+                    >
+                      ★
+                    </span>
+                  )}
+                </div>
+                {isActive && !isFocused && (
+                  <div
+                    className="font-sans text-cab-dim"
                     style={{
-                      fontSize: "2cqh",
-                      color: "var(--color-cab-accent)",
+                      fontSize: "1.55cqh",
+                      lineHeight: 1.15,
                     }}
                   >
-                    ★
-                  </span>
+                    SELECTED
+                  </div>
                 )}
               </button>
             </li>
@@ -746,34 +987,37 @@ function ServiceMenu({
   cabinetConfig,
   settingsDraft,
   settingsSection,
+  serviceFocus,
+  editingField,
   status,
+  fieldRefs,
   onClose,
   onReset,
   onSave,
   onSectionChange,
+  onFocusChange,
   onChange,
+  onFieldActivate,
+  onFieldBlur,
 }: {
   cabinetConfig: CabinetConfig;
   settingsDraft: CabinetConfigDraft;
   settingsSection: ServiceSectionId;
+  serviceFocus: ServiceFocusTarget;
+  editingField: ServiceFieldKey | null;
   status: ServiceMenuStatus;
+  fieldRefs: MutableRefObject<
+    Partial<Record<ServiceFieldKey, HTMLInputElement | HTMLTextAreaElement | null>>
+  >;
   onClose: () => void;
   onReset: () => void;
   onSave: () => void;
   onSectionChange: (section: ServiceSectionId) => void;
+  onFocusChange: (focus: ServiceFocusTarget) => void;
   onChange: (field: keyof CabinetConfigDraft, value: string) => void;
+  onFieldActivate: (field: ServiceFieldKey) => void;
+  onFieldBlur: (field: ServiceFieldKey) => void;
 }) {
-  const sections: Array<{
-    id: ServiceSectionId;
-    label: string;
-    detail: string;
-  }> = [
-    { id: "launch", label: "Launch", detail: "MAME runtime paths" },
-    { id: "media", label: "Library", detail: "ROM and media scan roots" },
-    { id: "display", label: "Display", detail: "CRT timing and safe area" },
-    { id: "storage", label: "Storage", detail: "SQLite boundary summary" },
-  ];
-
   const statusBadge =
     status === "idle"
       ? { label: "Ready", tone: "var(--color-cab-mute)" }
@@ -839,9 +1083,24 @@ function ServiceMenu({
               </div>
               <button
                 type="button"
+                tabIndex={-1}
                 onClick={onClose}
                 className="rounded-none bg-transparent px-[1.2cqw] py-[0.7cqh] font-display text-cab-mute ring-1 ring-cab-rule"
-                style={{ fontSize: "1.9cqh" }}
+                style={{
+                  fontSize: "1.9cqh",
+                  color:
+                    serviceFocus.zone === "close"
+                      ? "var(--color-cab-ink)"
+                      : "var(--color-cab-mute)",
+                  boxShadow:
+                    serviceFocus.zone === "close"
+                      ? "0 0 0 0.32cqh rgba(248,216,79,0.34)"
+                      : "none",
+                  background:
+                    serviceFocus.zone === "close"
+                      ? "rgba(248,216,79,0.08)"
+                      : "transparent",
+                }}
               >
                 CLOSE
               </button>
@@ -851,18 +1110,27 @@ function ServiceMenu({
           <div className="grid min-h-0 grid-cols-[13fr_29fr] gap-[2.4cqw]">
             <aside className="flex min-h-0 flex-col gap-[1.2cqh] border-r-[0.4cqh] border-cab-rule pr-[1.7cqw]">
               <ul role="list" className="flex flex-col gap-[0.8cqh]">
-                {sections.map((section, index) => {
+                {SERVICE_SECTIONS.map((section, index) => {
                   const isActive = section.id === settingsSection;
+                  const isFocused =
+                    serviceFocus.zone === "sections" &&
+                    serviceFocus.index === index;
                   return (
                     <li key={section.id}>
                       <button
                         type="button"
+                        tabIndex={-1}
                         onClick={() => onSectionChange(section.id)}
                         className="w-full rounded-none px-[1.2cqw] py-[1.15cqh] text-left ring-1 ring-cab-rule"
                         style={{
-                          background: isActive
+                          background: isFocused
                             ? "linear-gradient(90deg, rgba(248,216,79,0.16), rgba(248,216,79,0.03))"
-                            : "rgba(255,255,255,0.02)",
+                            : isActive
+                              ? "rgba(248,216,79,0.07)"
+                              : "rgba(255,255,255,0.02)",
+                          boxShadow: isFocused
+                            ? "0 0 0 0.32cqh rgba(248,216,79,0.34)"
+                            : "none",
                         }}
                       >
                         <div
@@ -910,19 +1178,39 @@ function ServiceMenu({
                   <FieldGroup>
                     <TextInputField
                       id="mameExecutablePath"
+                      fieldKey="mameExecutablePath"
                       label="MAME executable path"
                       name="mameExecutablePath"
                       value={settingsDraft.mameExecutablePath}
                       placeholder="/usr/local/bin/mame"
+                      isFocused={
+                        serviceFocus.zone === "field" &&
+                        serviceFocus.key === "mameExecutablePath"
+                      }
+                      isEditing={editingField === "mameExecutablePath"}
+                      fieldRefs={fieldRefs}
                       onChange={(value) => onChange("mameExecutablePath", value)}
+                      onFocusChange={onFocusChange}
+                      onActivate={onFieldActivate}
+                      onBlur={onFieldBlur}
                     />
                     <TextInputField
                       id="mameIniPath"
+                      fieldKey="mameIniPath"
                       label="Optional mame.ini path"
                       name="mameIniPath"
                       value={settingsDraft.mameIniPath}
                       placeholder="/etc/mame.ini"
+                      isFocused={
+                        serviceFocus.zone === "field" &&
+                        serviceFocus.key === "mameIniPath"
+                      }
+                      isEditing={editingField === "mameIniPath"}
+                      fieldRefs={fieldRefs}
                       onChange={(value) => onChange("mameIniPath", value)}
+                      onFocusChange={onFocusChange}
+                      onActivate={onFieldActivate}
+                      onBlur={onFieldBlur}
                     />
                   </FieldGroup>
                 </SettingsSection>
@@ -936,35 +1224,75 @@ function ServiceMenu({
                   <FieldGroup>
                     <TextAreaField
                       id="romRootsText"
+                      fieldKey="romRootsText"
                       label="ROM roots"
                       name="romRootsText"
                       value={settingsDraft.romRootsText}
                       placeholder={"/roms/main\n/roms/overflow"}
+                      isFocused={
+                        serviceFocus.zone === "field" &&
+                        serviceFocus.key === "romRootsText"
+                      }
+                      isEditing={editingField === "romRootsText"}
+                      fieldRefs={fieldRefs}
                       onChange={(value) => onChange("romRootsText", value)}
+                      onFocusChange={onFocusChange}
+                      onActivate={onFieldActivate}
+                      onBlur={onFieldBlur}
                     />
                     <TextAreaField
                       id="mediaRootsText"
+                      fieldKey="mediaRootsText"
                       label="Media roots"
                       name="mediaRootsText"
                       value={settingsDraft.mediaRootsText}
                       placeholder={"/media/cabinet\n/media/import"}
+                      isFocused={
+                        serviceFocus.zone === "field" &&
+                        serviceFocus.key === "mediaRootsText"
+                      }
+                      isEditing={editingField === "mediaRootsText"}
+                      fieldRefs={fieldRefs}
                       onChange={(value) => onChange("mediaRootsText", value)}
+                      onFocusChange={onFocusChange}
+                      onActivate={onFieldActivate}
+                      onBlur={onFieldBlur}
                     />
                     <TextInputField
                       id="previewVideoRoot"
+                      fieldKey="previewVideoRoot"
                       label="Preview video root"
                       name="previewVideoRoot"
                       value={settingsDraft.previewVideoRoot}
                       placeholder="/media/cabinet/videos"
+                      isFocused={
+                        serviceFocus.zone === "field" &&
+                        serviceFocus.key === "previewVideoRoot"
+                      }
+                      isEditing={editingField === "previewVideoRoot"}
+                      fieldRefs={fieldRefs}
                       onChange={(value) => onChange("previewVideoRoot", value)}
+                      onFocusChange={onFocusChange}
+                      onActivate={onFieldActivate}
+                      onBlur={onFieldBlur}
                     />
                     <TextInputField
                       id="artworkRoot"
+                      fieldKey="artworkRoot"
                       label="Artwork root"
                       name="artworkRoot"
                       value={settingsDraft.artworkRoot}
                       placeholder="/media/cabinet/artwork"
+                      isFocused={
+                        serviceFocus.zone === "field" &&
+                        serviceFocus.key === "artworkRoot"
+                      }
+                      isEditing={editingField === "artworkRoot"}
+                      fieldRefs={fieldRefs}
                       onChange={(value) => onChange("artworkRoot", value)}
+                      onFocusChange={onFocusChange}
+                      onActivate={onFieldActivate}
+                      onBlur={onFieldBlur}
                     />
                   </FieldGroup>
                 </SettingsSection>
@@ -978,52 +1306,102 @@ function ServiceMenu({
                   <FieldGroup>
                     <NumberInputField
                       id="attractTimeoutSeconds"
+                      fieldKey="attractTimeoutSeconds"
                       label="Attract timeout (seconds)"
                       name="attractTimeoutSeconds"
                       min={5}
                       max={600}
                       value={settingsDraft.attractTimeoutSeconds}
+                      isFocused={
+                        serviceFocus.zone === "field" &&
+                        serviceFocus.key === "attractTimeoutSeconds"
+                      }
+                      isEditing={editingField === "attractTimeoutSeconds"}
+                      fieldRefs={fieldRefs}
                       onChange={(value) =>
                         onChange("attractTimeoutSeconds", value)
                       }
+                      onFocusChange={onFocusChange}
+                      onActivate={onFieldActivate}
+                      onBlur={onFieldBlur}
                     />
 
                     <div className="grid grid-cols-2 gap-[1.1cqw]">
                       <NumberInputField
                         id="topInsetPercent"
+                        fieldKey="topInsetPercent"
                         label="Top inset %"
                         name="topInsetPercent"
                         min={0}
                         max={25}
                         value={settingsDraft.topInsetPercent}
+                        isFocused={
+                          serviceFocus.zone === "field" &&
+                          serviceFocus.key === "topInsetPercent"
+                        }
+                        isEditing={editingField === "topInsetPercent"}
+                        fieldRefs={fieldRefs}
                         onChange={(value) => onChange("topInsetPercent", value)}
+                        onFocusChange={onFocusChange}
+                        onActivate={onFieldActivate}
+                        onBlur={onFieldBlur}
                       />
                       <NumberInputField
                         id="rightInsetPercent"
+                        fieldKey="rightInsetPercent"
                         label="Right inset %"
                         name="rightInsetPercent"
                         min={0}
                         max={25}
                         value={settingsDraft.rightInsetPercent}
+                        isFocused={
+                          serviceFocus.zone === "field" &&
+                          serviceFocus.key === "rightInsetPercent"
+                        }
+                        isEditing={editingField === "rightInsetPercent"}
+                        fieldRefs={fieldRefs}
                         onChange={(value) => onChange("rightInsetPercent", value)}
+                        onFocusChange={onFocusChange}
+                        onActivate={onFieldActivate}
+                        onBlur={onFieldBlur}
                       />
                       <NumberInputField
                         id="bottomInsetPercent"
+                        fieldKey="bottomInsetPercent"
                         label="Bottom inset %"
                         name="bottomInsetPercent"
                         min={0}
                         max={25}
                         value={settingsDraft.bottomInsetPercent}
+                        isFocused={
+                          serviceFocus.zone === "field" &&
+                          serviceFocus.key === "bottomInsetPercent"
+                        }
+                        isEditing={editingField === "bottomInsetPercent"}
+                        fieldRefs={fieldRefs}
                         onChange={(value) => onChange("bottomInsetPercent", value)}
+                        onFocusChange={onFocusChange}
+                        onActivate={onFieldActivate}
+                        onBlur={onFieldBlur}
                       />
                       <NumberInputField
                         id="leftInsetPercent"
+                        fieldKey="leftInsetPercent"
                         label="Left inset %"
                         name="leftInsetPercent"
                         min={0}
                         max={25}
                         value={settingsDraft.leftInsetPercent}
+                        isFocused={
+                          serviceFocus.zone === "field" &&
+                          serviceFocus.key === "leftInsetPercent"
+                        }
+                        isEditing={editingField === "leftInsetPercent"}
+                        fieldRefs={fieldRefs}
                         onChange={(value) => onChange("leftInsetPercent", value)}
+                        onFocusChange={onFocusChange}
+                        onActivate={onFieldActivate}
+                        onBlur={onFieldBlur}
                       />
                     </div>
 
@@ -1078,17 +1456,48 @@ function ServiceMenu({
             <div className="flex items-center gap-[1cqw]">
               <button
                 type="button"
+                tabIndex={-1}
                 onClick={onReset}
                 className="rounded-none bg-transparent px-[1.2cqw] py-[0.85cqh] font-display text-cab-mute ring-1 ring-cab-rule"
-                style={{ fontSize: "1.9cqh" }}
+                style={{
+                  fontSize: "1.9cqh",
+                  color:
+                    serviceFocus.zone === "actions" &&
+                    serviceFocus.action === "defaults"
+                      ? "var(--color-cab-ink)"
+                      : "var(--color-cab-mute)",
+                  boxShadow:
+                    serviceFocus.zone === "actions" &&
+                    serviceFocus.action === "defaults"
+                      ? "0 0 0 0.32cqh rgba(248,216,79,0.34)"
+                      : "none",
+                  background:
+                    serviceFocus.zone === "actions" &&
+                    serviceFocus.action === "defaults"
+                      ? "rgba(248,216,79,0.08)"
+                      : "transparent",
+                }}
               >
                 DEFAULTS
               </button>
               <button
                 type="button"
+                tabIndex={-1}
                 onClick={onSave}
                 className="rounded-none bg-cab-accent px-[1.4cqw] py-[0.85cqh] font-display text-black ring-1 ring-cab-accent"
-                style={{ fontSize: "2cqh" }}
+                style={{
+                  fontSize: "2cqh",
+                  boxShadow:
+                    serviceFocus.zone === "actions" &&
+                    serviceFocus.action === "save"
+                      ? "0 0 0 0.32cqh rgba(248,216,79,0.34)"
+                      : "none",
+                  filter:
+                    serviceFocus.zone === "actions" &&
+                    serviceFocus.action === "save"
+                      ? "brightness(1.05)"
+                      : "none",
+                }}
               >
                 SAVE TO SQLITE
               </button>
@@ -1131,106 +1540,219 @@ function FieldGroup({ children }: { children: ReactNode }) {
   return <div className="grid gap-[1.2cqh]">{children}</div>;
 }
 
+type ServiceFieldControlProps = {
+  fieldKey: ServiceFieldKey;
+  label: string;
+  name: string;
+  value: string;
+  isFocused: boolean;
+  isEditing: boolean;
+  fieldRefs: MutableRefObject<
+    Partial<Record<ServiceFieldKey, HTMLInputElement | HTMLTextAreaElement | null>>
+  >;
+  onChange: (value: string) => void;
+  onFocusChange: (focus: ServiceFocusTarget) => void;
+  onActivate: (field: ServiceFieldKey) => void;
+  onBlur: (field: ServiceFieldKey) => void;
+};
+
 function TextInputField({
   id,
+  fieldKey,
   label,
   name,
   value,
   placeholder,
+  isFocused,
+  isEditing,
+  fieldRefs,
   onChange,
-}: {
+  onFocusChange,
+  onActivate,
+  onBlur,
+}: ServiceFieldControlProps & {
   id: string;
-  label: string;
-  name: string;
-  value: string;
   placeholder: string;
-  onChange: (value: string) => void;
 }) {
   return (
-    <label htmlFor={id} className="grid gap-[0.55cqh]">
+    <label
+      htmlFor={id}
+      className="grid gap-[0.55cqh] rounded-none px-[0.7cqw] py-[0.55cqh]"
+      style={{
+        background: isFocused ? "rgba(248,216,79,0.08)" : "transparent",
+        boxShadow: isFocused
+          ? "0 0 0 0.32cqh rgba(248,216,79,0.34)"
+          : "none",
+      }}
+      onClick={() => onFocusChange({ zone: "field", key: fieldKey })}
+      onDoubleClick={() => onActivate(fieldKey)}
+    >
       <span className="font-display text-cab-ink" style={{ fontSize: "2.2cqh" }}>
         {label}
       </span>
       <input
         id={id}
+        ref={(element) => {
+          fieldRefs.current[fieldKey] = element;
+        }}
         name={name}
+        tabIndex={-1}
         type="text"
         value={value}
         placeholder={placeholder}
         onChange={(event) => onChange(event.currentTarget.value)}
+        onFocus={() => {
+          onFocusChange({ zone: "field", key: fieldKey });
+        }}
+        onBlur={() => onBlur(fieldKey)}
         className="w-full rounded-none bg-[#090d13] px-[1.1cqw] py-[1cqh] font-sans text-cab-ink ring-1 ring-cab-rule outline-none placeholder:text-cab-dim focus:ring-[0.35cqh] focus:ring-cab-accent/55"
-        style={{ fontSize: "2.05cqh" }}
+        style={{
+          fontSize: "2.05cqh",
+          caretColor: isEditing ? "var(--color-cab-accent)" : "transparent",
+        }}
+        readOnly={!isEditing}
       />
+      <div
+        className="font-sans text-cab-dim"
+        style={{ fontSize: "1.5cqh", lineHeight: 1.2 }}
+      >
+        {isEditing ? "EDITING · ESC TO EXIT" : "PRESS START TO EDIT"}
+      </div>
     </label>
   );
 }
 
 function NumberInputField({
   id,
+  fieldKey,
   label,
   name,
   value,
   min,
   max,
+  isFocused,
+  isEditing,
+  fieldRefs,
   onChange,
-}: {
+  onFocusChange,
+  onActivate,
+  onBlur,
+}: ServiceFieldControlProps & {
   id: string;
-  label: string;
-  name: string;
-  value: string;
   min: number;
   max: number;
-  onChange: (value: string) => void;
 }) {
   return (
-    <label htmlFor={id} className="grid gap-[0.55cqh]">
+    <label
+      htmlFor={id}
+      className="grid gap-[0.55cqh] rounded-none px-[0.7cqw] py-[0.55cqh]"
+      style={{
+        background: isFocused ? "rgba(248,216,79,0.08)" : "transparent",
+        boxShadow: isFocused
+          ? "0 0 0 0.32cqh rgba(248,216,79,0.34)"
+          : "none",
+      }}
+      onClick={() => onFocusChange({ zone: "field", key: fieldKey })}
+      onDoubleClick={() => onActivate(fieldKey)}
+    >
       <span className="font-display text-cab-ink" style={{ fontSize: "2.2cqh" }}>
         {label}
       </span>
       <input
         id={id}
+        ref={(element) => {
+          fieldRefs.current[fieldKey] = element;
+        }}
         name={name}
+        tabIndex={-1}
         type="number"
         min={min}
         max={max}
         value={value}
         onChange={(event) => onChange(event.currentTarget.value)}
+        onFocus={() => {
+          onFocusChange({ zone: "field", key: fieldKey });
+        }}
+        onBlur={() => onBlur(fieldKey)}
         className="w-full rounded-none bg-[#090d13] px-[1.1cqw] py-[1cqh] font-sans text-cab-ink ring-1 ring-cab-rule outline-none focus:ring-[0.35cqh] focus:ring-cab-accent/55"
-        style={{ fontSize: "2.05cqh" }}
+        style={{
+          fontSize: "2.05cqh",
+          caretColor: isEditing ? "var(--color-cab-accent)" : "transparent",
+        }}
+        readOnly={!isEditing}
       />
+      <div
+        className="font-sans text-cab-dim"
+        style={{ fontSize: "1.5cqh", lineHeight: 1.2 }}
+      >
+        {isEditing ? "EDITING · ESC TO EXIT" : "PRESS START TO EDIT"}
+      </div>
     </label>
   );
 }
 
 function TextAreaField({
   id,
+  fieldKey,
   label,
   name,
   value,
   placeholder,
+  isFocused,
+  isEditing,
+  fieldRefs,
   onChange,
-}: {
+  onFocusChange,
+  onActivate,
+  onBlur,
+}: ServiceFieldControlProps & {
   id: string;
-  label: string;
-  name: string;
-  value: string;
   placeholder: string;
-  onChange: (value: string) => void;
 }) {
   return (
-    <label htmlFor={id} className="grid gap-[0.55cqh]">
+    <label
+      htmlFor={id}
+      className="grid gap-[0.55cqh] rounded-none px-[0.7cqw] py-[0.55cqh]"
+      style={{
+        background: isFocused ? "rgba(248,216,79,0.08)" : "transparent",
+        boxShadow: isFocused
+          ? "0 0 0 0.32cqh rgba(248,216,79,0.34)"
+          : "none",
+      }}
+      onClick={() => onFocusChange({ zone: "field", key: fieldKey })}
+      onDoubleClick={() => onActivate(fieldKey)}
+    >
       <span className="font-display text-cab-ink" style={{ fontSize: "2.2cqh" }}>
         {label}
       </span>
       <textarea
         id={id}
+        ref={(element) => {
+          fieldRefs.current[fieldKey] = element;
+        }}
         name={name}
+        tabIndex={-1}
         value={value}
         placeholder={placeholder}
         onChange={(event) => onChange(event.currentTarget.value)}
+        onFocus={() => {
+          onFocusChange({ zone: "field", key: fieldKey });
+        }}
+        onBlur={() => onBlur(fieldKey)}
         className="min-h-[12cqh] w-full resize-none rounded-none bg-[#090d13] px-[1.1cqw] py-[1cqh] font-sans text-cab-ink ring-1 ring-cab-rule outline-none placeholder:text-cab-dim focus:ring-[0.35cqh] focus:ring-cab-accent/55"
-        style={{ fontSize: "2.05cqh", lineHeight: 1.25 }}
+        style={{
+          fontSize: "2.05cqh",
+          lineHeight: 1.25,
+          caretColor: isEditing ? "var(--color-cab-accent)" : "transparent",
+        }}
+        readOnly={!isEditing}
       />
+      <div
+        className="font-sans text-cab-dim"
+        style={{ fontSize: "1.5cqh", lineHeight: 1.2 }}
+      >
+        {isEditing ? "EDITING · ESC TO EXIT" : "PRESS START TO EDIT"}
+      </div>
     </label>
   );
 }
