@@ -1,0 +1,16 @@
+[Unit]
+Description=Karlo arcade browser preview
+Conflicts=karlo.service
+
+[Service]
+Type=simple
+Environment=DISPLAY=:0
+Environment=XAUTHORITY=%h/.Xauthority
+EnvironmentFile=-/etc/karlo/karlo.env
+EnvironmentFile=-/etc/karlo/karlo-preview.env
+ExecStart=/opt/karlo/bin/karlo-run-preview.sh
+Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=default.target

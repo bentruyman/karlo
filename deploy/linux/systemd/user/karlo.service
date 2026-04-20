@@ -1,0 +1,16 @@
+[Unit]
+Description=Karlo arcade frontend
+Conflicts=karlo-preview.service
+
+[Service]
+Type=simple
+Environment=DISPLAY=:0
+Environment=XAUTHORITY=%h/.Xauthority
+Environment=KARLO_KIOSK=1
+EnvironmentFile=-/etc/karlo/karlo.env
+ExecStart=/opt/karlo/bin/karlo-run-current.sh
+Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=default.target

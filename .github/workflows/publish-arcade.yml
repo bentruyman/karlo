@@ -1,0 +1,85 @@
+name: Publish Arcade Build
+
+# `workflow_run` is evaluated from the default branch's copy of this file.
+# Keep this workflow on the default branch until the repo default branch moves off `develop`.
+on:
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    if: ${{ github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'main' }}
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.11
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Install Tauri build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            file \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            libssl-dev \
+            libwebkit2gtk-4.1-dev \
+            libgtk-3-dev \
+            libxdo-dev \
+            patchelf
+
+      - run: bun install --frozen-lockfile
+      - run: bun run tauri:build -- --bundles appimage
+
+      - name: Prepare rolling release assets
+        env:
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          set -eu
+          appimage_path="$(find src-tauri/target/release/bundle/appimage -type f -name '*.AppImage' | head -n 1)"
+          test -n "$appimage_path"
+
+          release_dir="$(mktemp -d)"
+          release_appimage="$release_dir/Karlo-x86_64.AppImage"
+          cp "$appimage_path" "$release_appimage"
+          chmod 0755 "$release_appimage"
+
+          built_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          ./scripts/write-arcade-manifest.sh \
+            "$HEAD_SHA" \
+            "$built_at" \
+            "$GITHUB_REPOSITORY" \
+            "arcade-stable" \
+            "$release_appimage" \
+            "$release_dir/arcade-stable.json"
+
+          printf 'RELEASE_DIR=%s\n' "$release_dir" >> "$GITHUB_ENV"
+
+      - name: Publish rolling release
+        uses: ncipollo/release-action@v1
+        with:
+          allowUpdates: true
+          artifacts: ${{ env.RELEASE_DIR }}/Karlo-x86_64.AppImage,${{ env.RELEASE_DIR }}/arcade-stable.json
+          artifactErrorsFailBuild: true
+          generateReleaseNotes: false
+          makeLatest: false
+          name: arcade-stable
+          prerelease: true
+          removeArtifacts: false
+          replacesArtifacts: true
+          tag: arcade-stable
+          body: |
+            Rolling Linux AppImage release for the arcade host.
+            Commit: ${{ github.event.workflow_run.head_sha }}

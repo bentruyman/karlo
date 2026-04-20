@@ -1,0 +1,9 @@
+[Unit]
+Description=Download and stage the latest Karlo arcade build
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+EnvironmentFile=-/etc/karlo/karlo.env
+ExecStart=/opt/karlo/bin/karlo-update.sh

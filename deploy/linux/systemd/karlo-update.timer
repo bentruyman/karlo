@@ -1,0 +1,11 @@
+[Unit]
+Description=Poll for new Karlo arcade builds
+
+[Timer]
+OnBootSec=2min
+# Five-minute polling keeps cabinet updates feeling fresh, but it can be relaxed if rate limiting or power use ever matters.
+OnUnitActiveSec=5min
+Persistent=true
+
+[Install]
+WantedBy=timers.target

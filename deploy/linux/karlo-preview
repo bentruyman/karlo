@@ -1,0 +1,84 @@
+#!/usr/bin/env sh
+set -eu
+
+if [ "$(id -u)" -ne 0 ]; then
+  echo "Run karlo-preview as root." >&2
+  exit 1
+fi
+
+runtime_user="${KARLO_RUNTIME_USER:-karlo}"
+runtime_uid="$(id -u "$runtime_user" 2>/dev/null || true)"
+runtime_dir="/run/user/$runtime_uid"
+runtime_bus="$runtime_dir/bus"
+preview_env_path="/etc/karlo/karlo-preview.env"
+
+usage() {
+  echo "usage: $0 on <vite-url> | off | status" >&2
+  exit 1
+}
+
+if [ -z "$runtime_uid" ] || [ ! -S "$runtime_bus" ]; then
+  echo "No active user systemd session found for ${runtime_user}." >&2
+  exit 1
+fi
+
+userctl() {
+  runuser -u "$runtime_user" -- env \
+    XDG_RUNTIME_DIR="$runtime_dir" \
+    DBUS_SESSION_BUS_ADDRESS="unix:path=$runtime_bus" \
+    systemctl --user "$@"
+}
+
+write_env_file_value() {
+  file_path="$1"
+  env_key="$2"
+  env_value="$3"
+  tmp_file="$(mktemp)"
+
+  if [ -f "$file_path" ]; then
+    awk -v env_key="$env_key" '
+      index($0, "=") == 0 { print; next }
+      substr($0, 1, index($0, "=") - 1) != env_key { print }
+    ' "$file_path" > "$tmp_file"
+  fi
+
+  printf '%s=%s\n' "$env_key" "$env_value" >> "$tmp_file"
+  install -m 0644 "$tmp_file" "$file_path"
+  rm -f "$tmp_file"
+}
+
+command_name="${1:-}"
+
+case "$command_name" in
+  on)
+    preview_url="${2:-}"
+    if [ -z "$preview_url" ]; then
+      usage
+    fi
+
+    if ! printf '%s\n' "$preview_url" | awk '
+      NR == 1 && $0 ~ /^https?:\/\/[^[:space:]]+$/ { ok = 1; next }
+      { ok = 0; exit 1 }
+      END { exit ok && NR == 1 ? 0 : 1 }
+    '; then
+      echo "Preview URL must be a single http(s) URL with no whitespace." >&2
+      exit 1
+    fi
+
+    mkdir -p /etc/karlo
+    write_env_file_value "$preview_env_path" "KARLO_DEV_URL" "$preview_url"
+    userctl daemon-reload
+    userctl stop karlo.service || true
+    userctl restart karlo-preview.service
+    ;;
+  off)
+    userctl stop karlo-preview.service || true
+    userctl restart karlo.service
+    ;;
+  status)
+    userctl status --no-pager karlo.service karlo-preview.service
+    ;;
+  *)
+    usage
+    ;;
+esac

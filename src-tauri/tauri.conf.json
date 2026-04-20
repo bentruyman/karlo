@@ -41,6 +41,11 @@
     "targets": "all",
     "category": "Entertainment",
     "shortDescription": "LCD-first MAME cabinet frontend",
-    "icon": ["icons/icon.png", "icons/Icon@2x.png"]
+    "icon": ["icons/icon.png", "icons/Icon@2x.png"],
+    "linux": {
+      "appimage": {
+        "bundleMediaFramework": true
+      }
+    }
   }
 }

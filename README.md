@@ -20,6 +20,8 @@ This repo is being rebooted.
 ## Planning Docs
 
 - [Reboot Plan](docs/reboot-plan.md)
+- [Linux Cabinet Smoke Build](docs/linux-cabinet-smoke.md)
+- [Arcade Updates](docs/arcade-updates.md)
 
 ## Initial Product Priorities
 

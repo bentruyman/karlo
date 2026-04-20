@@ -8,7 +8,7 @@ mod media_server;
 mod seed;
 mod store;
 
-use std::io;
+use std::{env, io};
 
 use tauri::Manager;
 
@@ -32,6 +32,7 @@ pub fn run() {
                 .map_err(|error| io::Error::other(error))?;
             app.manage(state);
             app.manage(media_server);
+            apply_launch_profile(app).map_err(io::Error::other)?;
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -50,4 +51,63 @@ pub fn run() {
         ])
         .run(tauri::generate_context!())
         .expect("error while running Karlo");
+}
+
+fn apply_launch_profile<R: tauri::Runtime, M: Manager<R>>(manager: &M) -> Result<(), String> {
+    if !launches_in_kiosk_mode() {
+        return Ok(());
+    }
+
+    let window = manager
+        .get_webview_window("main")
+        .ok_or_else(|| "missing main window".to_owned())?;
+
+    window.set_resizable(false).map_err(|error| error.to_string())?;
+    window.set_fullscreen(true).map_err(|error| error.to_string())?;
+    window.set_focus().map_err(|error| error.to_string())?;
+    Ok(())
+}
+
+fn launches_in_kiosk_mode() -> bool {
+    launches_in_kiosk_mode_with(env::args(), env::var("KARLO_KIOSK").ok().as_deref())
+}
+
+fn launches_in_kiosk_mode_with<I, S>(args: I, kiosk_env: Option<&str>) -> bool
+where
+    I: IntoIterator<Item = S>,
+    S: AsRef<str>,
+{
+    kiosk_env.map(is_truthy).unwrap_or(false)
+        || args.into_iter().any(|arg| arg.as_ref() == "--kiosk")
+}
+
+fn is_truthy(value: &str) -> bool {
+    matches!(
+        value.trim().to_ascii_lowercase().as_str(),
+        "1" | "true" | "yes" | "on"
+    )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::launches_in_kiosk_mode_with;
+
+    #[test]
+    fn kiosk_mode_accepts_command_line_flag() {
+        assert!(launches_in_kiosk_mode_with(["karlo", "--kiosk"], None));
+    }
+
+    #[test]
+    fn kiosk_mode_accepts_truthy_environment_values() {
+        for value in ["1", "true", "TRUE", "yes", "on"] {
+            assert!(launches_in_kiosk_mode_with(["karlo"], Some(value)));
+        }
+    }
+
+    #[test]
+    fn kiosk_mode_ignores_falsey_inputs() {
+        assert!(!launches_in_kiosk_mode_with(["karlo"], None));
+        assert!(!launches_in_kiosk_mode_with(["karlo"], Some("0")));
+        assert!(!launches_in_kiosk_mode_with(["karlo"], Some("false")));
+    }
 }
