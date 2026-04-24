@@ -28,7 +28,7 @@ pub const TABLES: [TableDefinition; 4] = [
     },
     TableDefinition {
         name: SETTINGS_TABLE,
-        purpose: "Cabinet config such as MAME path, mame.ini path, ROM/media roots, attract timeout, and overscan calibration.",
+        purpose: "Cabinet config such as MAME path, mame.ini path, ROM/media roots, attract timeout, and display calibration.",
     },
     TableDefinition {
         name: RECENT_GAMES_TABLE,
@@ -81,7 +81,7 @@ pub const SETTINGS: [SettingDefinition; 8] = [
     },
     SettingDefinition {
         key: "display_calibration_json",
-        purpose: "CRT-safe inset and overscan calibration values.",
+        purpose: "LCD-safe inset and bezel padding calibration values.",
         kind: "calibration",
         required: true,
     },

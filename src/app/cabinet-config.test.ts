@@ -7,7 +7,7 @@ import {
 import type { CabinetConfig } from "./types";
 
 const baseConfig: CabinetConfig = {
-  displayProfile: "crt-480i-4:3",
+  displayProfile: "lcd-1440p-16:9",
   paths: {
     mameExecutablePath: "/usr/local/bin/mame",
     mameIniPath: "/etc/mame.ini",

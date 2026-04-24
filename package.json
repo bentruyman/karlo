@@ -2,7 +2,7 @@
   "name": "karlo",
   "private": true,
   "version": "0.1.0",
-  "description": "CRT-first MAME cabinet frontend",
+  "description": "LCD-first MAME cabinet frontend",
   "type": "module",
   "packageManager": "bun@1.3.11",
   "scripts": {

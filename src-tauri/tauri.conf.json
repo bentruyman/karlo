@@ -32,7 +32,7 @@
     "active": true,
     "targets": "all",
     "category": "Entertainment",
-    "shortDescription": "CRT-first MAME cabinet frontend",
+    "shortDescription": "LCD-first MAME cabinet frontend",
     "icon": ["icons/icon.png", "icons/Icon@2x.png"]
   }
 }

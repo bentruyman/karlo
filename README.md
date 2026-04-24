@@ -2,7 +2,7 @@
 
 Karlo is a Linux-first arcade cabinet front-end for MAME.
 
-The target environment is a real 4:3 CRT television running at 480i, driven by a stripped-down mini PC that boots directly into the front-end and launches MAME seamlessly.
+The target environment is a 27-inch 1440p LCD display, driven by a stripped-down mini PC that boots directly into the front-end and launches MAME seamlessly.
 
 ## Status
 
@@ -14,7 +14,7 @@ This repo is being rebooted.
 - Tauri shell with a React/Vite UI and Rust runtime
 - SQLite for ROM metadata, favorites, recent games, and settings
 - Manual ROM/media scanning
-- CRT-first UI with overscan-safe layout and large readable focus states
+- LCD-first UI with a 16:9 safe-area layout and large readable focus states
 - MAME-only scope for v1
 
 ## Planning Docs

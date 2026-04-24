@@ -71,7 +71,7 @@ export const DEFAULT_RUNTIME_CONTRACT: RuntimeContract = {
       },
       {
         key: "display_calibration_json",
-        purpose: "CRT-safe inset and overscan calibration values.",
+        purpose: "LCD-safe inset and bezel padding calibration values.",
         kind: "calibration",
         required: true,
       },
@@ -100,7 +100,7 @@ export const DEFAULT_RUNTIME_CONTRACT: RuntimeContract = {
 export const DEFAULT_FRONTEND_BOOTSTRAP: FrontendBootstrap = {
   defaultView: "favorites",
   cabinetConfig: {
-    displayProfile: "crt-480i-4:3",
+    displayProfile: "lcd-1440p-16:9",
     paths: {
       mameExecutablePath: "",
       mameIniPath: null,
@@ -111,10 +111,10 @@ export const DEFAULT_FRONTEND_BOOTSTRAP: FrontendBootstrap = {
     },
     attractTimeoutSeconds: 12,
     displayCalibration: {
-      topInsetPercent: 5,
-      rightInsetPercent: 5,
-      bottomInsetPercent: 5,
-      leftInsetPercent: 5,
+      topInsetPercent: 1,
+      rightInsetPercent: 1,
+      bottomInsetPercent: 1,
+      leftInsetPercent: 1,
     },
   },
   curation: DEFAULT_RUNTIME_CONTRACT.curation,

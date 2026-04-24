@@ -9,7 +9,7 @@ The hardware and UX assumptions currently locked in:
 - Linux mini PC
 - Auto-login into the front-end
 - Offline-capable operation
-- True 4:3 CRT target at 480i, likely via HDMI conversion or transcoding
+- 27-inch 1440p LCD target
 - IPAC-style keyboard encoder for controls
 - MAME-only scope for v1
 - Favorites-first home screen
@@ -25,19 +25,18 @@ The provided visual reference points in a useful direction:
 - Strong asymmetry instead of a grid-heavy launcher
 - Cabinet art and logo treatment as supporting context, not the primary navigation model
 - Sparse metadata instead of dense lists
-- Mostly black background so the CRT image stays punchy
+- Mostly black background so the cabinet image stays punchy
 
-That should be translated into a CRT-safe layout rather than copied literally.
+That should be translated into an LCD-safe cabinet layout rather than copied literally.
 
-### CRT-Specific Rules
+### LCD Display Rules
 
-- Design for a fixed 4:3 frame first
-- Keep critical content inside an overscan-safe area inset by roughly 5% to 8%
+- Design for a fixed 16:9 frame first
+- Keep critical content inside a small safe area for bezel alignment, usually 0% to 2%
 - Use large type, large focus rings, and high-contrast silhouettes
-- Avoid thin rules, small labels, and dense metadata blocks
-- Assume blur, interlace flicker, and inconsistent converter quality
+- Use the sharper 1440p panel for richer preview art and metadata where it helps selection
 - Prefer fewer moving elements on screen at once
-- Skip fake scanline effects and other decorative filters that reduce readability
+- Skip fake retro display effects and other decorative filters that reduce readability
 
 ## Recommended Architecture
 
@@ -78,7 +77,7 @@ Karlo needs an explicit cabinet configuration model instead of hardcoded local p
   - preview-video root
   - artwork root
   - attract-mode timeout
-  - display calibration and overscan values
+  - display calibration and safe-area values
 - The hidden admin menu is responsible for editing and validating this configuration
 - Manual scans run only against the configured roots
 
@@ -217,7 +216,7 @@ The cabinet should be operable from arcade controls in normal use, with a hidden
 - configure MAME executable path, `mame.ini`, ROM roots, and media roots
 - rescan ROMs
 - rescan media
-- display calibration and overscan adjustment
+- display calibration and safe-area adjustment
 - input test
 - shutdown
 - reboot
@@ -237,14 +236,14 @@ Recommended direction:
 
 Early hardware validation is mandatory for:
 
-- converter quality from HDMI to CRT
-- supported 480i timings
+- fullscreen behavior at the target 1440p LCD resolution
+- panel scaling and bezel alignment
 - whether fullscreen transitions into and out of MAME cause visible flashing
 - whether preview video playback behaves acceptably on the chosen GPU stack
 
 ## Technical Risks to Validate Early
 
-- CRT output quality and overscan behavior through the chosen converter
+- LCD output quality and safe-area behavior on the chosen panel
 - video preview codec support and playback smoothness inside Tauri on Linux
 - focus recovery after MAME exits
 - input behavior through the IPAC encoder in both Karlo and MAME
@@ -256,7 +255,7 @@ Early hardware validation is mandatory for:
 
 - remove dependency on the old dual-package direction
 - create the new Tauri app scaffold
-- establish design tokens for the 4:3 CRT layout
+- establish design tokens for the 16:9 LCD layout
 - build static mock data so UI work can start immediately
 - define configuration and curation schema boundaries early so later milestones do not hardcode cabinet-specific rules
 
@@ -267,7 +266,7 @@ Early hardware validation is mandatory for:
 - large preview panel
 - details metadata panel
 - keyboard/IPAC navigation model
-- overscan-safe calibration screen
+- safe-area calibration screen
 
 ### Milestone 2: Library Import
 

@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 use crate::db;
 
 const DEFAULT_VIEW: &str = "favorites";
-const DISPLAY_PROFILE: &str = "crt-480i-4:3";
+const DISPLAY_PROFILE: &str = "lcd-1440p-16:9";
 const VISIBLE_LIBRARY_RULE: &str =
     "Browse views operate on visible curated library entries, not the full imported catalog.";
 const FAVORITES_FALLBACK_RULE: &str =
@@ -164,10 +164,10 @@ pub fn default_cabinet_config() -> CabinetConfig {
         },
         attract_timeout_seconds: 12,
         display_calibration: DisplayCalibration {
-            top_inset_percent: 5,
-            right_inset_percent: 5,
-            bottom_inset_percent: 5,
-            left_inset_percent: 5,
+            top_inset_percent: 1,
+            right_inset_percent: 1,
+            bottom_inset_percent: 1,
+            left_inset_percent: 1,
         },
     }
 }
@@ -256,7 +256,7 @@ mod tests {
         let bootstrap = frontend_bootstrap(default_cabinet_config());
 
         assert_eq!(bootstrap.default_view, "favorites");
-        assert_eq!(bootstrap.cabinet_config.display_profile, "crt-480i-4:3");
+        assert_eq!(bootstrap.cabinet_config.display_profile, "lcd-1440p-16:9");
         assert_eq!(bootstrap.cabinet_config.attract_timeout_seconds, 12);
         assert_eq!(bootstrap.curation.curated_library_table, "library_entries");
         assert_eq!(bootstrap.curation.browse_views.len(), 5);

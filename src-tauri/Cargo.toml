@@ -1,7 +1,7 @@
 [package]
 name = "karlo"
 version = "0.1.0"
-description = "CRT-first MAME cabinet frontend"
+description = "LCD-first MAME cabinet frontend"
 authors = ["Ben Truyman <ben@truyman.com>"]
 license = "MIT"
 edition = "2021"

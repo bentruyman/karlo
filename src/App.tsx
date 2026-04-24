@@ -780,8 +780,8 @@ export default function App() {
         className="relative bg-black"
         data-display-profile={bootstrap.cabinetConfig.displayProfile}
         style={{
-          width: "min(100vw, calc(100vh * 4 / 3))",
-          height: "min(100vh, calc(100vw * 3 / 4))",
+          width: "min(100vw, calc(100vh * 16 / 9))",
+          height: "min(100vh, calc(100vw * 9 / 16))",
           containerType: "size",
         }}
       >
@@ -1394,7 +1394,7 @@ function ServiceMenu({
           className="absolute inset-0 opacity-60"
           style={{
             background:
-              "linear-gradient(90deg, transparent 0%, rgba(248,216,79,0.08) 48%, transparent 100%), repeating-linear-gradient(180deg, rgba(255,255,255,0.03) 0, rgba(255,255,255,0.03) 1px, transparent 1px, transparent 7px)",
+              "linear-gradient(90deg, transparent 0%, rgba(248,216,79,0.08) 48%, transparent 100%), radial-gradient(circle at 18% 0%, rgba(255,255,255,0.06), transparent 28%)",
           }}
         />
 
@@ -1418,7 +1418,7 @@ function ServiceMenu({
                   className="max-w-[74ch] font-sans text-cab-mute"
                   style={{ fontSize: "2.1cqh", lineHeight: 1.25 }}
                 >
-                  Launcher paths, scan roots, attract timing, and CRT safe-area
+                  Launcher paths, scan roots, attract timing, and LCD safe-area
                   values now persist through the Rust-owned SQLite settings
                   store. Triple <strong>COIN</strong> opens this panel.
                 </p>
@@ -1688,7 +1688,7 @@ function ServiceMenu({
               {settingsSection === "display" && (
                 <SettingsSection
                   title="Display and Timing"
-                  subtitle="Tune idle behavior here, then open the dedicated CRT calibration surface for live overscan work."
+                  subtitle="Tune idle behavior here, then open the dedicated display calibration surface for live safe-area work."
                 >
                   <FieldGroup>
                     <NumberInputField
@@ -1730,7 +1730,7 @@ function ServiceMenu({
 
                     <InfoPanel
                       title="Active display profile"
-                      body={`${cabinetConfig.displayProfile} remains fixed at the runtime layer while overscan and safe-area values are persisted here.`}
+                      body={`${cabinetConfig.displayProfile} remains fixed at the runtime layer while bezel padding and safe-area values are persisted here.`}
                     />
                   </FieldGroup>
                 </SettingsSection>
@@ -1864,7 +1864,7 @@ function CalibrationScreen({
           className="absolute inset-0 opacity-60"
           style={{
             background:
-              "radial-gradient(circle at 50% 42%, rgba(248,216,79,0.09), transparent 38%), repeating-linear-gradient(180deg, rgba(255,255,255,0.025) 0, rgba(255,255,255,0.025) 1px, transparent 1px, transparent 7px)",
+              "radial-gradient(circle at 50% 42%, rgba(248,216,79,0.09), transparent 38%), linear-gradient(135deg, rgba(255,255,255,0.035), transparent 42%)",
           }}
         />
 
@@ -1882,7 +1882,7 @@ function CalibrationScreen({
                   className="font-display text-cab-ink"
                   style={{ fontSize: "5.4cqh" }}
                 >
-                  CRT SAFE-AREA AND OVERSCAN
+                  LCD SAFE AREA AND BEZEL PADDING
                 </h2>
                 <p
                   className="max-w-[76ch] font-sans text-cab-mute"
@@ -1999,7 +1999,7 @@ function CalibrationScreen({
 
               <InfoPanel
                 title="Frame Goal"
-                body="Everything inside the bright safe-area frame should survive overscan on the cabinet CRT without clipping the browse chrome or service text."
+                body="Everything inside the bright safe-area frame should clear the cabinet bezel without clipping the browse chrome or service text."
               />
             </aside>
 
@@ -2261,8 +2261,8 @@ function CalibrationLauncher({
             className="max-w-[56ch] font-sans text-cab-mute"
             style={{ fontSize: "1.88cqh", lineHeight: 1.22 }}
           >
-            Use the live frame preview to set overscan-safe insets against real
-            cabinet geometry instead of editing raw numbers blind.
+            Use the live frame preview to set LCD-safe insets against the real
+            cabinet bezel instead of editing raw numbers blind.
           </div>
         </div>
         <div

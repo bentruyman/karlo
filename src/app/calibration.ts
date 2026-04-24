@@ -25,17 +25,17 @@ export const CALIBRATION_EDGES: Array<{
   {
     key: "topInsetPercent",
     label: "TOP",
-    detail: "Protect the mode bar and status text from overscan.",
+    detail: "Keep the mode bar clear of the cabinet bezel.",
   },
   {
     key: "rightInsetPercent",
     label: "RIGHT",
-    detail: "Keep preview art and edge labels inside the tube.",
+    detail: "Keep preview art and edge labels inside the panel bounds.",
   },
   {
     key: "bottomInsetPercent",
     label: "BOTTOM",
-    detail: "Protect control hints and footer labels from cutoff.",
+    detail: "Keep control hints and footer labels clear of the bezel.",
   },
   {
     key: "leftInsetPercent",

@@ -29,7 +29,7 @@ export const SERVICE_SECTIONS: Array<{
 }> = [
   { id: "launch", label: "Launch", detail: "MAME runtime paths" },
   { id: "media", label: "Library", detail: "ROM and media scan roots" },
-  { id: "display", label: "Display", detail: "CRT timing and safe area" },
+  { id: "display", label: "Display", detail: "LCD timing and safe area" },
   { id: "storage", label: "Storage", detail: "SQLite boundary summary" },
 ];
 
