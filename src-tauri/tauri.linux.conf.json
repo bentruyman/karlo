@@ -1,0 +1,31 @@
+{
+  "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "Karlo",
+        "width": 2560,
+        "height": 1440,
+        "minWidth": 960,
+        "minHeight": 720,
+        "resizable": false,
+        "fullscreen": true,
+        "decorations": false,
+        "backgroundColor": "#05070b"
+      }
+    ]
+  },
+  "bundle": {
+    "targets": ["deb", "appimage"],
+    "linux": {
+      "appimage": {
+        "bundleMediaFramework": true
+      },
+      "deb": {
+        "section": "games",
+        "priority": "optional"
+      }
+    }
+  }
+}

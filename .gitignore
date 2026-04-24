@@ -3,4 +3,5 @@
 .turbo
 dist
 node_modules
+ops/cabinet.env
 src-tauri/target

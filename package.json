@@ -11,7 +11,8 @@
     "test": "bun test ./src/**/*.test.ts",
     "preview": "vite preview --host 0.0.0.0 --port 1420",
     "tauri:dev": "tauri dev",
-    "tauri:build": "tauri build"
+    "tauri:build": "tauri build",
+    "deploy:cabinet": "./ops/deploy-cabinet.sh"
   },
   "dependencies": {
     "@tauri-apps/api": "^2.0.0",
