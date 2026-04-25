@@ -76,5 +76,11 @@ installs it on the cabinet, and restarts `karlo-session.service`.
 
 Provisioning is enabled by default. It installs the cabinet runtime packages,
 creates the dedicated `karlo` user if needed, installs a systemd service that
-runs Karlo under `cage` on tty1, disables the normal display manager for a
-direct cabinet boot, and keeps SSH enabled for future deploys.
+runs Karlo on tty1, disables the normal display manager for a direct cabinet
+boot, and keeps SSH enabled for future deploys. The default session backend is
+X11 with Openbox because it is more reliable with Tauri/WebKit on the tested
+Ubuntu cabinet image. A Weston-based Wayland path remains available with
+`KARLO_SESSION_BACKEND=wayland`.
+
+Set `KARLO_PASSWORDLESS_SUDO=1` for a dedicated cabinet if you want future
+deploys to run without prompting for the SSH user's sudo password.

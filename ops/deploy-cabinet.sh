@@ -72,6 +72,18 @@ shell_quote() {
   printf "%q" "$1"
 }
 
+ssh_remote() {
+  # Commands passed here are intentionally assembled locally for the target host.
+  # shellcheck disable=SC2029
+  ssh "${REMOTE}" "$@"
+}
+
+ssh_remote_tty() {
+  # Commands passed here are intentionally assembled locally for the target host.
+  # shellcheck disable=SC2029
+  ssh -tt "${REMOTE}" "$@"
+}
+
 require_command git
 require_command gh
 require_command scp
@@ -89,11 +101,14 @@ KARLO_WORKFLOW="${KARLO_WORKFLOW:-linux-artifact.yml}"
 KARLO_ARTIFACT_NAME="${KARLO_ARTIFACT_NAME:-karlo-linux-x64}"
 KARLO_CABINET_SSH_USER="${KARLO_CABINET_SSH_USER:-${USER}}"
 KARLO_CABINET_USER="${KARLO_CABINET_USER:-karlo}"
+KARLO_PASSWORDLESS_SUDO="${KARLO_PASSWORDLESS_SUDO:-1}"
 KARLO_REMOTE_TMP="${KARLO_REMOTE_TMP:-/tmp/karlo-deploy}"
 KARLO_PROVISION="${KARLO_PROVISION:-1}"
 KARLO_OPTIMIZE_BOOT="${KARLO_OPTIMIZE_BOOT:-1}"
 KARLO_RESTART="${KARLO_RESTART:-1}"
 KARLO_APP_BINARY="${KARLO_APP_BINARY:-/usr/bin/karlo}"
+KARLO_SESSION_BACKEND="${KARLO_SESSION_BACKEND:-x11}"
+KARLO_WESTON_SHELL="${KARLO_WESTON_SHELL:-desktop}"
 
 [[ -n "${KARLO_GITHUB_REPO}" ]] || die "set KARLO_GITHUB_REPO or use a GitHub origin remote"
 [[ -n "${KARLO_GITHUB_REF}" ]] || die "set KARLO_GITHUB_REF or run from a branch"
@@ -139,22 +154,22 @@ REMOTE_DEB="${KARLO_REMOTE_TMP}/karlo.deb"
 REMOTE_PROVISION="${KARLO_REMOTE_TMP}/provision-cabinet.sh"
 
 echo "Deploying ${DEB_PATH} to ${REMOTE}:${REMOTE_DEB}"
-# shellcheck disable=SC2029
-ssh "${REMOTE}" "mkdir -p ${REMOTE_TMP_QUOTED}"
+ssh_remote "mkdir -p ${REMOTE_TMP_QUOTED}"
 scp "${DEB_PATH}" "${REMOTE}:${REMOTE_DEB}"
 scp "${ROOT_DIR}/ops/provision-cabinet.sh" "${REMOTE}:${REMOTE_PROVISION}"
 
-ssh "${REMOTE}" "sudo systemctl stop karlo-session.service >/dev/null 2>&1 || true"
-# shellcheck disable=SC2029
-ssh "${REMOTE}" "sudo apt-get install -y $(shell_quote "${REMOTE_DEB}")"
+ssh_remote_tty "sudo systemctl stop karlo-session.service >/dev/null 2>&1 || true"
+ssh_remote_tty "sudo apt-get install -y $(shell_quote "${REMOTE_DEB}")"
 
 if [[ "${KARLO_PROVISION}" == "1" ]]; then
-  # shellcheck disable=SC2029
-  ssh "${REMOTE}" "sudo env KARLO_CABINET_USER=$(shell_quote "${KARLO_CABINET_USER}") KARLO_APP_BINARY=$(shell_quote "${KARLO_APP_BINARY}") KARLO_OPTIMIZE_BOOT=$(shell_quote "${KARLO_OPTIMIZE_BOOT}") bash $(shell_quote "${REMOTE_PROVISION}")"
+  ssh_remote_tty "sudo env KARLO_CABINET_USER=$(shell_quote "${KARLO_CABINET_USER}") KARLO_APP_BINARY=$(shell_quote "${KARLO_APP_BINARY}") KARLO_OPTIMIZE_BOOT=$(shell_quote "${KARLO_OPTIMIZE_BOOT}") KARLO_SESSION_BACKEND=$(shell_quote "${KARLO_SESSION_BACKEND}") KARLO_WESTON_SHELL=$(shell_quote "${KARLO_WESTON_SHELL}") bash $(shell_quote "${REMOTE_PROVISION}")"
+  if [[ "${KARLO_PASSWORDLESS_SUDO}" == "1" ]]; then
+    ssh_remote_tty "sudo install -d -m 0750 /etc/sudoers.d && echo $(shell_quote "${KARLO_CABINET_SSH_USER} ALL=(ALL) NOPASSWD:ALL") | sudo tee /etc/sudoers.d/90-karlo-deploy >/dev/null && sudo chmod 0440 /etc/sudoers.d/90-karlo-deploy && sudo visudo -cf /etc/sudoers.d/90-karlo-deploy"
+  fi
 fi
 
 if [[ "${KARLO_RESTART}" == "1" ]]; then
-  ssh "${REMOTE}" "sudo systemctl daemon-reload && sudo systemctl enable karlo-session.service && sudo systemctl restart karlo-session.service && sudo systemctl --no-pager --full status karlo-session.service"
+  ssh_remote_tty "sudo systemctl daemon-reload && sudo systemctl enable karlo-session.service && sudo systemctl restart karlo-session.service && sudo systemctl --no-pager --full status karlo-session.service"
 fi
 
 echo "Deployed Karlo ${HEAD_SHA} to ${KARLO_CABINET_HOST}."

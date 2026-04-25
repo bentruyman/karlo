@@ -4,7 +4,10 @@ set -euo pipefail
 CABINET_USER="${KARLO_CABINET_USER:-karlo}"
 APP_BINARY="${KARLO_APP_BINARY:-/usr/bin/karlo}"
 OPTIMIZE_BOOT="${KARLO_OPTIMIZE_BOOT:-1}"
+SESSION_BACKEND="${KARLO_SESSION_BACKEND:-x11}"
+WESTON_SHELL="${KARLO_WESTON_SHELL:-desktop}"
 SERVICE_PATH="/etc/systemd/system/karlo-session.service"
+SESSION_WRAPPER="/usr/local/bin/karlo-session"
 
 die() {
   echo "error: $*" >&2
@@ -36,7 +39,6 @@ add_user_to_group_if_present() {
 run apt-get update
 run env DEBIAN_FRONTEND=noninteractive apt-get install -y \
   ca-certificates \
-  cage \
   dbus \
   dbus-user-session \
   gstreamer1.0-libav \
@@ -48,8 +50,16 @@ run env DEBIAN_FRONTEND=noninteractive apt-get install -y \
   libwebkit2gtk-4.1-0 \
   libxdo3 \
   mame \
+  dbus-x11 \
+  openbox \
   openssh-server \
-  seatd
+  pipewire \
+  seatd \
+  unclutter \
+  weston \
+  x11-xserver-utils \
+  xinit \
+  xserver-xorg
 
 if ! id -u "${CABINET_USER}" >/dev/null 2>&1; then
   run useradd --create-home --shell /bin/bash "${CABINET_USER}"
@@ -70,6 +80,89 @@ if command -v systemctl >/dev/null 2>&1; then
 fi
 
 run install -d -m 0755 "$(dirname "${SERVICE_PATH}")"
+run tee "${SESSION_WRAPPER}" >/dev/null <<SESSION
+#!/usr/bin/env bash
+set -euo pipefail
+
+LOG_DIR="\${HOME}/.local/state/karlo"
+LOG_FILE="\${LOG_DIR}/session.log"
+
+mkdir -p "\${LOG_DIR}"
+exec >>"\${LOG_FILE}" 2>&1
+
+echo "--- Karlo session started at \$(date --iso-8601=seconds) ---"
+echo "SESSION_BACKEND=${SESSION_BACKEND}"
+echo "XDG_RUNTIME_DIR=\${XDG_RUNTIME_DIR:-}"
+echo "GDK_BACKEND=\${GDK_BACKEND:-}"
+
+if [[ "\${1:-}" != "--inside-dbus" ]]; then
+  exec /usr/bin/dbus-run-session -- "\$0" --inside-dbus
+fi
+
+pkill -u "\$(id -u)" -f at-spi-bus-launcher 2>/dev/null || true
+pkill -u "\$(id -u)" -f accessibility.conf 2>/dev/null || true
+
+if [[ "${SESSION_BACKEND}" == "x11" ]]; then
+  export DISPLAY=:0
+  export GDK_BACKEND=x11
+  rm -f /tmp/.X0-lock
+
+  XINITRC="\${LOG_DIR}/xinitrc"
+  cat >"\${XINITRC}" <<'XINITRC'
+#!/usr/bin/env bash
+set -euo pipefail
+
+xset s off -dpms s noblank 2>/dev/null || true
+export GDK_BACKEND=x11
+export XDG_CURRENT_DESKTOP=Openbox
+dbus-update-activation-environment --verbose DISPLAY XAUTHORITY GDK_BACKEND XDG_CURRENT_DESKTOP || true
+
+unclutter -idle 0.25 -root >/dev/null 2>&1 &
+openbox >/dev/null 2>&1 &
+
+exec ${APP_BINARY}
+XINITRC
+  chmod 0755 "\${XINITRC}"
+
+  exec /usr/bin/startx "\${XINITRC}" -- :0 vt1 -keeptty -nolisten tcp
+fi
+
+export WAYLAND_DISPLAY=wayland-karlo
+rm -f "\${XDG_RUNTIME_DIR}/\${WAYLAND_DISPLAY}" "\${XDG_RUNTIME_DIR}/\${WAYLAND_DISPLAY}.lock"
+
+/usr/bin/weston \\
+  --backend=drm \\
+  --shell=${WESTON_SHELL} \\
+  --idle-time=0 \\
+  --socket="\${WAYLAND_DISPLAY}" \\
+  --log="\${LOG_DIR}/weston.log" &
+WESTON_PID=\$!
+
+cleanup() {
+  kill "\${WESTON_PID}" 2>/dev/null || true
+  wait "\${WESTON_PID}" 2>/dev/null || true
+}
+trap cleanup EXIT
+
+for _ in {1..100}; do
+  if [[ -S "\${XDG_RUNTIME_DIR}/\${WAYLAND_DISPLAY}" ]]; then
+    break
+  fi
+  sleep 0.05
+done
+
+if [[ ! -S "\${XDG_RUNTIME_DIR}/\${WAYLAND_DISPLAY}" ]]; then
+  echo "weston did not create \${XDG_RUNTIME_DIR}/\${WAYLAND_DISPLAY}" >&2
+  exit 1
+fi
+
+dbus-update-activation-environment --verbose --all || true
+echo "WAYLAND_DISPLAY=\${WAYLAND_DISPLAY}"
+
+exec ${APP_BINARY}
+SESSION
+run chmod 0755 "${SESSION_WRAPPER}"
+
 run tee "${SERVICE_PATH}" >/dev/null <<SERVICE
 [Unit]
 Description=Karlo arcade cabinet session
@@ -81,8 +174,12 @@ Conflicts=getty@tty1.service display-manager.service
 User=${CABINET_USER}
 PAMName=login
 WorkingDirectory=${CABINET_HOME}
-Environment=XDG_SESSION_TYPE=wayland
-Environment=GDK_BACKEND=wayland
+Environment=XDG_SESSION_TYPE=${SESSION_BACKEND}
+Environment=XDG_RUNTIME_DIR=/run/user/%U
+Environment=GDK_BACKEND=${SESSION_BACKEND}
+Environment=GTK_USE_PORTAL=0
+Environment=NO_AT_BRIDGE=1
+Environment=RUST_BACKTRACE=1
 Environment=WEBKIT_DISABLE_COMPOSITING_MODE=1
 TTYPath=/dev/tty1
 TTYReset=yes
@@ -91,7 +188,7 @@ TTYVTDisallocate=yes
 StandardInput=tty
 StandardOutput=journal
 StandardError=journal
-ExecStart=/usr/bin/dbus-run-session -- /usr/bin/cage -s -- ${APP_BINARY}
+ExecStart=${SESSION_WRAPPER}
 Restart=always
 RestartSec=2
 
