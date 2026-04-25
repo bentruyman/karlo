@@ -1,7 +1,7 @@
 use std::{
     collections::{HashMap, HashSet},
     fs,
-    path::PathBuf,
+    path::{Path, PathBuf},
     time::{SystemTime, UNIX_EPOCH},
 };
 
@@ -235,16 +235,28 @@ impl AppState {
     pub fn scan_rom_roots(&self) -> Result<contract::LibraryMaintenanceResult, String> {
         let cabinet_config = self.load_cabinet_config()?;
         let discovered_machine_names = importer::scan_rom_roots(&cabinet_config.paths.rom_roots)?;
+        let media_roots = MediaRootCandidates::from_paths(&cabinet_config.paths);
         let mut connection = self.open_connection()?;
         let transaction = connection.transaction().map_err(|error| error.to_string())?;
 
         let game_rows = load_game_rows(&transaction)?;
         for row in &game_rows {
             let is_available = discovered_machine_names.contains(&row.machine_name);
+            let video_path = media_roots.video_path_for(&row.machine_name);
+            let artwork_paths = media_roots.artwork_paths_for(&row.machine_name);
             transaction
                 .execute(
-                    "UPDATE games SET rom_available = ?2 WHERE id = ?1",
-                    params![row.id, is_available],
+                    "UPDATE games
+                     SET rom_available = ?2,
+                         video_path = ?3,
+                         artwork_paths_json = ?4
+                     WHERE id = ?1",
+                    params![
+                        row.id,
+                        is_available,
+                        video_path,
+                        serde_json::to_string(&artwork_paths).map_err(|error| error.to_string())?,
+                    ],
                 )
                 .map_err(|error| error.to_string())?;
         }
@@ -263,8 +275,9 @@ impl AppState {
             imported_games_count: snapshot.imported_games.len(),
             rom_available_count,
             message: format!(
-                "Scanned {} ROM roots and found {} available sets.",
+                "Scanned {} ROM roots and refreshed media from {} roots; found {} available sets.",
                 cabinet_config.paths.rom_roots.len(),
+                media_roots.configured_roots_count,
                 rom_available_count,
             ),
             snapshot,
@@ -746,6 +759,104 @@ fn next_library_sort_order(connection: &Connection) -> Result<i64, String> {
         .map_err(|error| error.to_string())
 }
 
+struct MediaRootCandidates {
+    video_roots: Vec<PathBuf>,
+    artwork_roots: Vec<PathBuf>,
+    configured_roots_count: usize,
+}
+
+impl MediaRootCandidates {
+    fn from_paths(paths: &contract::CabinetPaths) -> Self {
+        let video_roots =
+            media_candidates(&paths.preview_video_root, &paths.media_roots, &["videos"]);
+        let artwork_roots = media_candidates(&paths.artwork_root, &paths.media_roots, &["artwork"]);
+        let configured_roots_count = paths
+            .media_roots
+            .iter()
+            .filter(|root| !root.trim().is_empty())
+            .count()
+            + usize::from(!paths.preview_video_root.trim().is_empty())
+            + usize::from(!paths.artwork_root.trim().is_empty());
+
+        Self {
+            video_roots,
+            artwork_roots,
+            configured_roots_count,
+        }
+    }
+
+    fn video_path_for(&self, machine_name: &str) -> Option<String> {
+        find_media_file(&self.video_roots, machine_name, &["mp4"])
+    }
+
+    fn artwork_paths_for(&self, machine_name: &str) -> Vec<String> {
+        ARTWORK_SUBDIRECTORIES
+            .iter()
+            .filter_map(|subdirectory| {
+                let roots = self
+                    .artwork_roots
+                    .iter()
+                    .map(|root| root.join(subdirectory))
+                    .collect::<Vec<_>>();
+                find_media_file(&roots, machine_name, &["png", "jpg", "jpeg"])
+            })
+            .collect()
+    }
+}
+
+const ARTWORK_SUBDIRECTORIES: [&str; 5] = ["title", "preview", "marquee", "cabinet", "flyer"];
+
+fn media_candidates(
+    primary_root: &str,
+    media_roots: &[String],
+    fallback_segments: &[&str],
+) -> Vec<PathBuf> {
+    let mut candidates = Vec::new();
+
+    if let Some(root) = non_empty_string(primary_root) {
+        push_unique_path(&mut candidates, PathBuf::from(root));
+    }
+
+    for media_root in media_roots {
+        if let Some(root) = non_empty_string(media_root) {
+            let root = PathBuf::from(root);
+            push_unique_path(&mut candidates, root.clone());
+            let mut fallback = root;
+            for segment in fallback_segments {
+                fallback = fallback.join(segment);
+            }
+            push_unique_path(&mut candidates, fallback);
+        }
+    }
+
+    candidates
+}
+
+fn push_unique_path(paths: &mut Vec<PathBuf>, candidate: PathBuf) {
+    if !paths.iter().any(|existing| existing == &candidate) {
+        paths.push(candidate);
+    }
+}
+
+fn find_media_file(roots: &[PathBuf], machine_name: &str, extensions: &[&str]) -> Option<String> {
+    for root in roots {
+        for extension in extensions {
+            let path = root.join(format!("{machine_name}.{extension}"));
+            if file_exists(&path) {
+                return Some(path.to_string_lossy().into_owned());
+            }
+        }
+    }
+
+    None
+}
+
+fn file_exists(path: &Path) -> bool {
+    path.metadata()
+        .map(|metadata| metadata.is_file())
+        .unwrap_or(false)
+}
+
 #[derive(Debug, Clone)]
 struct ExistingGameState {
     machine_name: String,
@@ -853,11 +964,83 @@ mod tests {
         let _ = fs::remove_file(path);
     }
 
+    #[test]
+    fn rom_scan_reconciles_staged_media_paths() {
+        let path = temp_database_path("media-scan");
+        let library_root = temp_library_path("media-scan");
+        let rom_root = library_root.join("roms/mame");
+        let media_root = library_root.join("media/mame");
+        let video_path = media_root.join("videos/1942.mp4");
+        let title_path = media_root.join("artwork/title/1942.png");
+        let marquee_path = media_root.join("artwork/marquee/1942.png");
+        let state = AppState {
+            db_path: path.clone(),
+        };
+        state.ensure_schema().unwrap();
+        state.seed_default_settings().unwrap();
+        state.seed_mock_library_data().unwrap();
+
+        fs::create_dir_all(&rom_root).unwrap();
+        fs::create_dir_all(video_path.parent().unwrap()).unwrap();
+        fs::create_dir_all(title_path.parent().unwrap()).unwrap();
+        fs::create_dir_all(marquee_path.parent().unwrap()).unwrap();
+        fs::write(rom_root.join("1942.zip"), []).unwrap();
+        fs::write(&video_path, []).unwrap();
+        fs::write(&title_path, []).unwrap();
+        fs::write(&marquee_path, []).unwrap();
+
+        let mut cabinet_config = contract::default_cabinet_config();
+        cabinet_config.paths.rom_roots = vec![rom_root.to_string_lossy().into_owned()];
+        cabinet_config.paths.media_roots = vec![media_root.to_string_lossy().into_owned()];
+        state.save_cabinet_config(&cabinet_config).unwrap();
+
+        let result = state.scan_rom_roots().unwrap();
+        let game = result
+            .snapshot
+            .imported_games
+            .iter()
+            .find(|game| game.machine_name == "1942")
+            .unwrap();
+        let missing_game = result
+            .snapshot
+            .imported_games
+            .iter()
+            .find(|game| game.machine_name == "digdug")
+            .unwrap();
+        let expected_video_path = video_path.to_string_lossy().into_owned();
+
+        assert!(game.rom_available);
+        assert_eq!(
+            game.video_path.as_deref(),
+            Some(expected_video_path.as_str())
+        );
+        assert_eq!(
+            game.artwork_paths,
+            vec![
+                title_path.to_string_lossy().into_owned(),
+                marquee_path.to_string_lossy().into_owned(),
+            ],
+        );
+        assert!(!missing_game.rom_available);
+        assert_eq!(result.rom_available_count, 1);
+
+        let _ = fs::remove_file(path);
+        let _ = fs::remove_dir_all(library_root);
+    }
+
     fn temp_database_path(label: &str) -> PathBuf {
         let suffix = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap()
             .as_nanos();
         std::env::temp_dir().join(format!("karlo-{label}-{suffix}.sqlite3"))
+    }
+
+    fn temp_library_path(label: &str) -> PathBuf {
+        let suffix = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        std::env::temp_dir().join(format!("karlo-{label}-{suffix}"))
     }
 }
