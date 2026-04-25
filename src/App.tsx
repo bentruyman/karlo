@@ -59,6 +59,7 @@ import {
   getGamesForView,
   jumpBrowseGroup,
 } from "./app/library";
+import { getPreviewMedia } from "./app/media";
 import type {
   BrowseView,
   BrowseViewId,
@@ -1240,28 +1241,83 @@ function BrowseMarkerRail({
 }
 
 function PreviewColumn({ game, isAttract }: { game: GameRecord; isAttract: boolean }) {
+  const [unavailableMediaPaths, setUnavailableMediaPaths] = useState<Set<string>>(
+    () => new Set(),
+  );
+  const previewMedia = getPreviewMedia(game, unavailableMediaPaths);
+
+  useEffect(() => {
+    setUnavailableMediaPaths(new Set());
+  }, [game.machineName]);
+
+  function markPreviewMediaUnavailable(path: string) {
+    setUnavailableMediaPaths((current) => {
+      if (current.has(path)) return current;
+      const next = new Set(current);
+      next.add(path);
+      return next;
+    });
+  }
+
   return (
     <div className="flex flex-col gap-[2cqh] min-h-0">
       <div className="relative flex-1 min-h-0 overflow-hidden bg-cab-surface border-[0.4cqh] border-cab-rule">
+        {previewMedia.kind === "video" && (
+          <video
+            key={previewMedia.path}
+            className="absolute inset-0 h-full w-full bg-black object-contain"
+            src={previewMedia.src}
+            autoPlay
+            muted
+            loop
+            playsInline
+            preload="metadata"
+            onError={() => markPreviewMediaUnavailable(previewMedia.path)}
+          />
+        )}
+
+        {previewMedia.kind === "image" && (
+          <img
+            key={previewMedia.path}
+            className="absolute inset-0 h-full w-full bg-black object-contain"
+            src={previewMedia.src}
+            alt=""
+            draggable={false}
+            onError={() => markPreviewMediaUnavailable(previewMedia.path)}
+          />
+        )}
+
+        {previewMedia.kind === "none" && (
+          <div
+            aria-hidden
+            className="absolute inset-0"
+            style={{
+              background:
+                "radial-gradient(ellipse at 50% 45%, color-mix(in srgb, var(--color-cab-accent) 14%, #000) 0%, #000 70%)",
+              opacity: isAttract ? 1 : 0.8,
+            }}
+          />
+        )}
+
         <div
           aria-hidden
-          className="absolute inset-0"
-          style={{
-            background:
-              "radial-gradient(ellipse at 50% 45%, color-mix(in srgb, var(--color-cab-accent) 14%, #000) 0%, #000 70%)",
-            opacity: isAttract ? 1 : 0.8,
-          }}
+          className="absolute inset-x-0 top-0 h-[18%] bg-gradient-to-b from-black/75 to-transparent"
         />
-        <div className="absolute inset-[3%] flex flex-col justify-between">
-          <div className="flex items-start justify-between font-display tracking-[0.25em] text-cab-mute" style={{ fontSize: "1.9cqh" }}>
+        <div
+          aria-hidden
+          className="absolute inset-x-0 bottom-0 h-[24%] bg-gradient-to-t from-black/80 to-transparent"
+        />
+
+        <div className="absolute inset-[3%] flex flex-col justify-between pointer-events-none">
+          <div className="flex items-start justify-between font-display tracking-[0.25em] text-cab-mute" style={{ fontSize: "1.9cqh", textShadow: "0 0.25cqh 0.8cqh #000" }}>
             <span>PREVIEW</span>
             <span>{game.machineName.toUpperCase()}</span>
           </div>
 
-          {game.attractCaption && (
+          {game.attractCaption && previewMedia.kind === "none" && (
             <p
               className="font-sans leading-[1.2] text-cab-ink max-w-[80%]"
-              style={{ fontSize: "2.4cqh" }}
+              style={{ fontSize: "2.4cqh", textShadow: "0 0.25cqh 0.8cqh #000" }}
             >
               {game.attractCaption}
             </p>
