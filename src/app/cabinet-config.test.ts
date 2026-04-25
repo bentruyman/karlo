@@ -85,11 +85,28 @@ describe("parseCabinetConfigDraft", () => {
     });
   });
 
-  test("rejects a blank MAME executable path", () => {
+  test("allows a blank MAME executable path for non-import settings", () => {
     expect(
       parseCabinetConfigDraft(
         { ...cabinetConfigToDraft(baseConfig), mameExecutablePath: "   " },
         baseConfig,
+      ),
+    ).toMatchObject({
+      ok: true,
+      value: {
+        paths: {
+          mameExecutablePath: "",
+        },
+      },
+    });
+  });
+
+  test("rejects a blank MAME executable path when importing catalog metadata", () => {
+    expect(
+      parseCabinetConfigDraft(
+        { ...cabinetConfigToDraft(baseConfig), mameExecutablePath: "   " },
+        baseConfig,
+        { requireMameExecutablePath: true },
       ),
     ).toEqual({
       ok: false,
@@ -97,15 +114,54 @@ describe("parseCabinetConfigDraft", () => {
     });
   });
 
-  test("rejects empty ROM root lists", () => {
+  test("allows empty library roots for partial settings saves", () => {
+    expect(
+      parseCabinetConfigDraft(
+        {
+          ...cabinetConfigToDraft(baseConfig),
+          romRootsText: "\n  \n",
+          mediaRootsText: "",
+          previewVideoRoot: "",
+          artworkRoot: "",
+        },
+        baseConfig,
+      ),
+    ).toMatchObject({
+      ok: true,
+      value: {
+        paths: {
+          romRoots: [],
+          mediaRoots: [],
+          previewVideoRoot: "",
+          artworkRoot: "",
+        },
+      },
+    });
+  });
+
+  test("rejects empty ROM root lists when scanning the library", () => {
     expect(
       parseCabinetConfigDraft(
         { ...cabinetConfigToDraft(baseConfig), romRootsText: "\n  \n" },
         baseConfig,
+        { requireLibraryRoots: true },
       ),
     ).toEqual({
       ok: false,
       message: "ROM roots require at least one path.",
+    });
+  });
+
+  test("rejects empty media root lists when scanning the library", () => {
+    expect(
+      parseCabinetConfigDraft(
+        { ...cabinetConfigToDraft(baseConfig), mediaRootsText: "\n  \n" },
+        baseConfig,
+        { requireLibraryRoots: true },
+      ),
+    ).toEqual({
+      ok: false,
+      message: "Media roots require at least one path.",
     });
   });
 });

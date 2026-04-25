@@ -414,31 +414,40 @@ export default function App() {
     setSettingsStatus("idle");
   }
 
-  const persistSettingsDraft = useEffectEvent(async () => {
-    const parsed = parseCabinetConfigDraft(settingsDraft, activeCabinetConfig);
-    if (!parsed.ok) {
-      setSettingsStatus({ kind: "error", message: parsed.message });
-      return null;
-    }
+  const persistSettingsDraft = useEffectEvent(
+    async (options?: {
+      requireMameExecutablePath?: boolean;
+      requireLibraryRoots?: boolean;
+    }) => {
+      const parsed = parseCabinetConfigDraft(
+        settingsDraft,
+        activeCabinetConfig,
+        options,
+      );
+      if (!parsed.ok) {
+        setSettingsStatus({ kind: "error", message: parsed.message });
+        return null;
+      }
 
-    setSettingsStatus("saving");
+      setSettingsStatus("saving");
 
-    try {
-      const savedConfig = await saveCabinetConfig(parsed.value);
-      setBootstrap((current) => ({ ...current, cabinetConfig: savedConfig }));
-      setSettingsDraft(cabinetConfigToDraft(savedConfig));
-      return savedConfig;
-    } catch (error) {
-      setSettingsStatus({
-        kind: "error",
-        message:
-          error instanceof Error
-            ? error.message
-            : "Could not save cabinet settings.",
-      });
-      return null;
-    }
-  });
+      try {
+        const savedConfig = await saveCabinetConfig(parsed.value);
+        setBootstrap((current) => ({ ...current, cabinetConfig: savedConfig }));
+        setSettingsDraft(cabinetConfigToDraft(savedConfig));
+        return savedConfig;
+      } catch (error) {
+        setSettingsStatus({
+          kind: "error",
+          message:
+            error instanceof Error
+              ? error.message
+              : "Could not save cabinet settings.",
+        });
+        return null;
+      }
+    },
+  );
 
   const commitSettings = useEffectEvent(async () => {
     const savedConfig = await persistSettingsDraft();
@@ -451,7 +460,9 @@ export default function App() {
   });
 
   const runCatalogImport = useEffectEvent(async () => {
-    const savedConfig = await persistSettingsDraft();
+    const savedConfig = await persistSettingsDraft({
+      requireMameExecutablePath: true,
+    });
     if (!savedConfig) return;
 
     setSettingsStatus("saving");
@@ -472,7 +483,9 @@ export default function App() {
   });
 
   const runRomScan = useEffectEvent(async () => {
-    const savedConfig = await persistSettingsDraft();
+    const savedConfig = await persistSettingsDraft({
+      requireLibraryRoots: true,
+    });
     if (!savedConfig) return;
 
     setSettingsStatus("saving");
@@ -487,7 +500,7 @@ export default function App() {
         message:
           error instanceof Error
             ? error.message
-            : "Could not scan ROM roots.",
+            : "Could not scan ROM and media roots.",
       });
     }
   });
@@ -1436,6 +1449,14 @@ function ServiceMenu({
               >
                 {statusBadge.label}
               </div>
+              {status !== "idle" && status !== "saving" && status.kind === "error" && (
+                <div
+                  className="max-w-[28cqw] text-right font-sans text-cab-danger"
+                  style={{ fontSize: "1.65cqh", lineHeight: 1.2 }}
+                >
+                  {status.message}
+                </div>
+              )}
               <button
                 type="button"
                 tabIndex={-1}
@@ -1666,8 +1687,8 @@ function ServiceMenu({
                       onBlur={onFieldBlur}
                     />
                     <ServicePanelLauncher
-                      title="SCAN ROM ROOTS"
-                      body="Walk the configured ROM roots, update rom_available on imported machines, and seed visible library entries for newly discovered sets."
+                      title="SCAN LIBRARY"
+                      body="Walk the configured ROM and media roots, update availability, and refresh resolved video and artwork paths."
                       hint="PRESS START TO SCAN"
                       isFocused={
                         serviceFocus.zone === "panelActions" &&

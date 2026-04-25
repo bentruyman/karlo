@@ -35,26 +35,28 @@ export function cabinetConfigToDraft(
 export function parseCabinetConfigDraft(
   draft: CabinetConfigDraft,
   baseConfig: CabinetConfig,
+  options: {
+    requireMameExecutablePath?: boolean;
+    requireLibraryRoots?: boolean;
+  } = {},
 ): { ok: true; value: CabinetConfig } | { ok: false; message: string } {
-  const mameExecutablePath = requiredPath(
-    draft.mameExecutablePath,
-    "MAME executable path",
-  );
+  const mameExecutablePath = options.requireMameExecutablePath
+    ? requiredPath(draft.mameExecutablePath, "MAME executable path")
+    : { ok: true as const, value: draft.mameExecutablePath.trim() };
   if (!mameExecutablePath.ok) return mameExecutablePath;
 
-  const previewVideoRoot = requiredPath(
-    draft.previewVideoRoot,
-    "Preview video root",
+  const romRoots = parseRootList(
+    draft.romRootsText,
+    "ROM roots",
+    Boolean(options.requireLibraryRoots),
   );
-  if (!previewVideoRoot.ok) return previewVideoRoot;
-
-  const artworkRoot = requiredPath(draft.artworkRoot, "Artwork root");
-  if (!artworkRoot.ok) return artworkRoot;
-
-  const romRoots = requiredRootList(draft.romRootsText, "ROM roots");
   if (!romRoots.ok) return romRoots;
 
-  const mediaRoots = requiredRootList(draft.mediaRootsText, "Media roots");
+  const mediaRoots = parseRootList(
+    draft.mediaRootsText,
+    "Media roots",
+    Boolean(options.requireLibraryRoots),
+  );
   if (!mediaRoots.ok) return mediaRoots;
 
   const attractTimeoutSeconds = parseIntegerField(
@@ -107,8 +109,8 @@ export function parseCabinetConfigDraft(
         mameIniPath: optionalValue(draft.mameIniPath),
         romRoots: romRoots.value,
         mediaRoots: mediaRoots.value,
-        previewVideoRoot: previewVideoRoot.value,
-        artworkRoot: artworkRoot.value,
+        previewVideoRoot: draft.previewVideoRoot.trim(),
+        artworkRoot: draft.artworkRoot.trim(),
       },
       attractTimeoutSeconds: attractTimeoutSeconds.value,
       displayCalibration: {
@@ -139,12 +141,13 @@ function requiredPath(
   return { ok: true, value: trimmed };
 }
 
-function requiredRootList(
+function parseRootList(
   value: string,
   label: string,
+  required: boolean,
 ): { ok: true; value: string[] } | { ok: false; message: string } {
   const roots = splitRoots(value);
-  if (roots.length === 0) {
+  if (required && roots.length === 0) {
     return { ok: false, message: `${label} require at least one path.` };
   }
   return { ok: true, value: roots };
