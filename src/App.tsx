@@ -805,6 +805,8 @@ export default function App() {
 
   if (!selectedGame) return null;
 
+  const showBrowseChrome = !isAttractMode || isServiceOpen;
+
   return (
     <div
       className="isolate grid h-screen w-screen place-items-center overflow-hidden bg-black text-cab-ink antialiased"
@@ -828,31 +830,35 @@ export default function App() {
             left: `${displayCalibration.leftInsetPercent}%`,
           }}
         >
-          <ModeBar
-            browseViews={browseViews}
-            activeIndex={viewIndex}
-            isFocused={browseFocusZone === "modeBar"}
-            summaries={viewSummaries}
-            onFocusZone={() => setBrowseFocusZone("modeBar")}
-            onSelect={jumpToView}
-          />
+          {showBrowseChrome && (
+            <>
+              <ModeBar
+                browseViews={browseViews}
+                activeIndex={viewIndex}
+                isFocused={browseFocusZone === "modeBar"}
+                summaries={viewSummaries}
+                onFocusZone={() => setBrowseFocusZone("modeBar")}
+                onSelect={jumpToView}
+              />
 
-          <div className="grid grid-cols-[44%_1fr] gap-[3cqw] min-h-0">
-            <ListColumn
-              activeViewId={activeView.id}
-              games={visibleGames}
-              selectedIndex={activeSelectedIndex}
-              isFocused={browseFocusZone === "gameList"}
-              browseGroupState={browseGroupState}
-              onFocusZone={() => setBrowseFocusZone("gameList")}
-              onSelect={setSelection}
-              fallbackLabel={visibleState.fallbackLabel}
-            />
+              <div className="grid grid-cols-[44%_1fr] gap-[3cqw] min-h-0">
+                <ListColumn
+                  activeViewId={activeView.id}
+                  games={visibleGames}
+                  selectedIndex={activeSelectedIndex}
+                  isFocused={browseFocusZone === "gameList"}
+                  browseGroupState={browseGroupState}
+                  onFocusZone={() => setBrowseFocusZone("gameList")}
+                  onSelect={setSelection}
+                  fallbackLabel={visibleState.fallbackLabel}
+                />
 
-            <PreviewColumn game={selectedGame} isAttract={isAttractMode} />
-          </div>
+                <PreviewColumn game={selectedGame} />
+              </div>
 
-          <ControlHints launchStatus={launchStatus} />
+              <ControlHints launchStatus={launchStatus} />
+            </>
+          )}
         </div>
 
         {isAttractMode && !isServiceOpen && <AttractScreensaver />}
@@ -1428,7 +1434,7 @@ function BrowseMarkerRail({
   );
 }
 
-function PreviewColumn({ game, isAttract }: { game: GameRecord; isAttract: boolean }) {
+function PreviewColumn({ game }: { game: GameRecord }) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const [unavailableMediaPaths, setUnavailableMediaPaths] = useState<Set<string>>(
     () => new Set(),
@@ -1450,6 +1456,8 @@ function PreviewColumn({ game, isAttract }: { game: GameRecord; isAttract: boole
     video.muted = true;
     video.load();
     startPreviewVideo(video, previewMedia.path);
+
+    return () => stopPreviewVideo(video);
   }, [previewMedia.kind, previewMediaPath, previewMediaSrc]);
 
   function markPreviewMediaUnavailable(path: string) {
@@ -1513,7 +1521,7 @@ function PreviewColumn({ game, isAttract }: { game: GameRecord; isAttract: boole
             style={{
               background:
                 "radial-gradient(ellipse at 50% 45%, color-mix(in srgb, var(--color-cab-accent) 14%, #000) 0%, #000 70%)",
-              opacity: isAttract ? 1 : 0.8,
+              opacity: 0.8,
             }}
           />
         )}
@@ -1580,6 +1588,12 @@ function startPreviewVideo(video: HTMLVideoElement, path?: string) {
       });
     });
   }
+}
+
+function stopPreviewVideo(video: HTMLVideoElement) {
+  video.pause();
+  video.removeAttribute("src");
+  video.load();
 }
 
 function logPreviewVideoError(video: HTMLVideoElement, path: string) {
