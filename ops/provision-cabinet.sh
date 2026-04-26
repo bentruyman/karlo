@@ -6,6 +6,7 @@ APP_BINARY="${KARLO_APP_BINARY:-/usr/bin/karlo}"
 OPTIMIZE_BOOT="${KARLO_OPTIMIZE_BOOT:-1}"
 SESSION_BACKEND="${KARLO_SESSION_BACKEND:-x11}"
 WESTON_SHELL="${KARLO_WESTON_SHELL:-desktop}"
+WEBKIT_DISABLE_COMPOSITING="${KARLO_WEBKIT_DISABLE_COMPOSITING:-0}"
 SERVICE_PATH="/etc/systemd/system/karlo-session.service"
 SESSION_WRAPPER="/usr/local/bin/karlo-session"
 
@@ -41,6 +42,7 @@ run env DEBIAN_FRONTEND=noninteractive apt-get install -y \
   ca-certificates \
   dbus \
   dbus-user-session \
+  gstreamer1.0-gl \
   gstreamer1.0-libav \
   gstreamer1.0-plugins-bad \
   gstreamer1.0-plugins-base \
@@ -49,6 +51,7 @@ run env DEBIAN_FRONTEND=noninteractive apt-get install -y \
   gstreamer1.0-plugins-ugly \
   gstreamer1.0-tools \
   libayatana-appindicator3-1 \
+  libgl1-mesa-dri \
   librsvg2-2 \
   libwebkit2gtk-4.1-0 \
   libxdo3 \
@@ -95,8 +98,16 @@ exec >>"\${LOG_FILE}" 2>&1
 
 echo "--- Karlo session started at \$(date --iso-8601=seconds) ---"
 echo "SESSION_BACKEND=${SESSION_BACKEND}"
+WEBKIT_DISABLE_COMPOSITING="${WEBKIT_DISABLE_COMPOSITING}"
+echo "WEBKIT_DISABLE_COMPOSITING=\${WEBKIT_DISABLE_COMPOSITING}"
 echo "XDG_RUNTIME_DIR=\${XDG_RUNTIME_DIR:-}"
 echo "GDK_BACKEND=\${GDK_BACKEND:-}"
+
+if [[ "\${WEBKIT_DISABLE_COMPOSITING}" == "1" ]]; then
+  export WEBKIT_DISABLE_COMPOSITING_MODE=1
+else
+  unset WEBKIT_DISABLE_COMPOSITING_MODE
+fi
 
 if [[ "\${1:-}" != "--inside-dbus" ]]; then
   exec /usr/bin/dbus-run-session -- "\$0" --inside-dbus
@@ -183,7 +194,6 @@ Environment=GDK_BACKEND=${SESSION_BACKEND}
 Environment=GTK_USE_PORTAL=0
 Environment=NO_AT_BRIDGE=1
 Environment=RUST_BACKTRACE=1
-Environment=WEBKIT_DISABLE_COMPOSITING_MODE=1
 TTYPath=/dev/tty1
 TTYReset=yes
 TTYVHangup=yes

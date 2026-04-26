@@ -21,6 +21,7 @@ import {
   loadCabinetConfig,
   loadFrontendBootstrap,
   loadLibrarySnapshot,
+  reportFrontendDiagnostic,
   saveCabinetConfig,
   scanRomRoots,
   toggleGameFavorite,
@@ -1447,7 +1448,7 @@ function PreviewColumn({ game, isAttract }: { game: GameRecord; isAttract: boole
 
     video.muted = true;
     video.load();
-    startPreviewVideo(video);
+    startPreviewVideo(video, previewMedia.path);
   }, [previewMedia.kind, previewMediaPath, previewMediaSrc]);
 
   function markPreviewMediaUnavailable(path: string) {
@@ -1473,9 +1474,23 @@ function PreviewColumn({ game, isAttract }: { game: GameRecord; isAttract: boole
             loop
             playsInline
             preload="auto"
-            onCanPlay={(event) => startPreviewVideo(event.currentTarget)}
-            onLoadedData={(event) => startPreviewVideo(event.currentTarget)}
-            onError={() => markPreviewMediaUnavailable(previewMedia.path)}
+            onCanPlay={(event) =>
+              startPreviewVideo(event.currentTarget, previewMedia.path)
+            }
+            onLoadedData={(event) =>
+              startPreviewVideo(event.currentTarget, previewMedia.path)
+            }
+            onPlaying={(event) => {
+              reportPreviewVideoEvent(
+                "preview_video_playing",
+                event.currentTarget,
+                previewMedia.path,
+              );
+            }}
+            onError={(event) => {
+              logPreviewVideoError(event.currentTarget, previewMedia.path);
+              markPreviewMediaUnavailable(previewMedia.path);
+            }}
           />
         )}
 
@@ -1553,11 +1568,42 @@ function PreviewColumn({ game, isAttract }: { game: GameRecord; isAttract: boole
   );
 }
 
-function startPreviewVideo(video: HTMLVideoElement) {
+function startPreviewVideo(video: HTMLVideoElement, path?: string) {
   const playAttempt = video.play();
   if (playAttempt) {
-    void playAttempt.catch(() => undefined);
+    void playAttempt.catch((error: unknown) => {
+      if (!path) return;
+      void reportFrontendDiagnostic("preview_video_play_rejected", {
+        ...previewVideoDetails(video, path),
+        playError: error instanceof Error ? error.message : String(error),
+      });
+    });
   }
+}
+
+function logPreviewVideoError(video: HTMLVideoElement, path: string) {
+  const details = previewVideoDetails(video, path);
+  console.warn("[karlo] preview video failed", details);
+  void reportFrontendDiagnostic("preview_video_failed", details);
+}
+
+function reportPreviewVideoEvent(
+  event: string,
+  video: HTMLVideoElement,
+  path: string,
+) {
+  void reportFrontendDiagnostic(event, previewVideoDetails(video, path));
+}
+
+function previewVideoDetails(video: HTMLVideoElement, path: string) {
+  return {
+    path,
+    src: video.currentSrc || video.src,
+    errorCode: video.error?.code,
+    errorMessage: video.error?.message,
+    networkState: video.networkState,
+    readyState: video.readyState,
+  };
 }
 
 function Dot() {

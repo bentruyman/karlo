@@ -39,12 +39,21 @@ export function toMediaSrc(path: string) {
   try {
     return convertFileSrc(path);
   } catch {
-    return path;
+    return toKarloMediaSrc(path);
   }
 }
 
 export function toVideoSrc(path: string) {
   if (!isDeviceFilePath(path) || !isTauri()) return path;
+
+  try {
+    return convertFileSrc(path);
+  } catch {
+    return toKarloMediaSrc(path);
+  }
+}
+
+function toKarloMediaSrc(path: string) {
   return `karlo-media://localhost/${encodeURIComponent(path)}`;
 }
 
