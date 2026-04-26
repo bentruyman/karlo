@@ -160,7 +160,7 @@ scp "${DEB_PATH}" "${REMOTE}:${REMOTE_DEB}"
 scp "${ROOT_DIR}/ops/provision-cabinet.sh" "${REMOTE}:${REMOTE_PROVISION}"
 
 ssh_remote_tty "sudo systemctl stop karlo-session.service >/dev/null 2>&1 || true"
-ssh_remote_tty "sudo apt-get install -y $(shell_quote "${REMOTE_DEB}")"
+ssh_remote_tty "sudo apt-get install -y --reinstall $(shell_quote "${REMOTE_DEB}")"
 
 if [[ "${KARLO_PROVISION}" == "1" ]]; then
   ssh_remote_tty "sudo env KARLO_CABINET_USER=$(shell_quote "${KARLO_CABINET_USER}") KARLO_APP_BINARY=$(shell_quote "${KARLO_APP_BINARY}") KARLO_OPTIMIZE_BOOT=$(shell_quote "${KARLO_OPTIMIZE_BOOT}") KARLO_SESSION_BACKEND=$(shell_quote "${KARLO_SESSION_BACKEND}") KARLO_WESTON_SHELL=$(shell_quote "${KARLO_WESTON_SHELL}") KARLO_WEBKIT_DISABLE_COMPOSITING=$(shell_quote "${KARLO_WEBKIT_DISABLE_COMPOSITING}") bash $(shell_quote "${REMOTE_PROVISION}")"
