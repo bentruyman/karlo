@@ -195,6 +195,7 @@ Frontend browse views should operate on curated visible library entries by defau
 ### Attract Mode
 
 - Starts after an idle timeout
+- Shows a bouncing arcade-token screensaver over the cabinet UI while idle
 - Cycles through a curated sequence of visible games
 - Prefers explicit `attract_sort_order` entries and falls back to visible browse order if no dedicated attract sequence exists
 - Uses muted preview video by default
