@@ -261,6 +261,7 @@ impl AppState {
             .transaction()
             .map_err(|error| error.to_string())?;
 
+        let added_games_count = upsert_discovered_games(&transaction, &discovered_machine_names)?;
         let game_rows = load_game_rows(&transaction)?;
         for row in &game_rows {
             let is_available = discovered_machine_names.contains(&row.machine_name);
@@ -297,10 +298,11 @@ impl AppState {
             imported_games_count: snapshot.imported_games.len(),
             rom_available_count,
             message: format!(
-                "Scanned {} ROM roots and refreshed media from {} roots; found {} available sets.",
+                "Scanned {} ROM roots and refreshed media from {} roots; found {} available sets and added {} new catalog entries.",
                 cabinet_config.paths.rom_roots.len(),
                 media_roots.configured_roots_count,
                 rom_available_count,
+                added_games_count,
             ),
             snapshot,
         })
@@ -737,6 +739,55 @@ fn load_game_rows(connection: &Connection) -> Result<Vec<GameRow>, String> {
     Ok(game_rows)
 }
 
+fn upsert_discovered_games(
+    connection: &Connection,
+    discovered_machine_names: &HashSet<String>,
+) -> Result<usize, String> {
+    let existing_machine_names = existing_machine_names(connection)?;
+    let mut discovered = discovered_machine_names.iter().collect::<Vec<_>>();
+    discovered.sort();
+    let mut added_games_count = 0;
+
+    for machine_name in discovered {
+        if existing_machine_names.contains(machine_name) {
+            continue;
+        }
+
+        connection
+            .execute(
+                "INSERT INTO games (
+                    machine_name,
+                    title,
+                    year,
+                    manufacturer,
+                    genre,
+                    rom_available,
+                    artwork_paths_json
+                 ) VALUES (?1, ?2, 0, 'Unknown', 'Unknown', 1, '[]')",
+                params![machine_name, machine_name],
+            )
+            .map_err(|error| error.to_string())?;
+        added_games_count += 1;
+    }
+
+    Ok(added_games_count)
+}
+
+fn existing_machine_names(connection: &Connection) -> Result<HashSet<String>, String> {
+    let mut statement = connection
+        .prepare("SELECT machine_name FROM games")
+        .map_err(|error| error.to_string())?;
+    let rows = statement
+        .query_map([], |row| row.get(0))
+        .map_err(|error| error.to_string())?;
+
+    let mut machine_names = HashSet::new();
+    for row in rows {
+        machine_names.insert(row.map_err(|error| error.to_string())?);
+    }
+    Ok(machine_names)
+}
+
 fn seed_missing_library_entries(
     connection: &Connection,
     game_rows: &[GameRow],
@@ -1065,6 +1116,52 @@ mod tests {
         );
         assert!(!missing_game.rom_available);
         assert_eq!(result.rom_available_count, 1);
+
+        let _ = fs::remove_file(path);
+        let _ = fs::remove_dir_all(library_root);
+    }
+
+    #[test]
+    fn rom_scan_adds_discovered_games_missing_from_catalog() {
+        let path = temp_database_path("rom-scan-new-games");
+        let library_root = temp_library_path("rom-scan-new-games");
+        let rom_root = library_root.join("roms/mame");
+        let state = AppState {
+            db_path: path.clone(),
+        };
+        state.ensure_schema().unwrap();
+        state.seed_default_settings().unwrap();
+
+        fs::create_dir_all(&rom_root).unwrap();
+        fs::write(rom_root.join("tmnt.zip"), []).unwrap();
+
+        let mut cabinet_config = contract::default_cabinet_config();
+        cabinet_config.paths.rom_roots = vec![rom_root.to_string_lossy().into_owned()];
+        state.save_cabinet_config(&cabinet_config).unwrap();
+
+        let result = state.scan_rom_roots().unwrap();
+        let game = result
+            .snapshot
+            .imported_games
+            .iter()
+            .find(|game| game.machine_name == "tmnt")
+            .unwrap();
+
+        assert_eq!(game.title, "tmnt");
+        assert_eq!(game.manufacturer, "Unknown");
+        assert!(game.rom_available);
+        assert_eq!(result.imported_games_count, 1);
+        assert_eq!(result.rom_available_count, 1);
+        assert!(result
+            .snapshot
+            .library_entries
+            .iter()
+            .any(|entry| entry.machine_name == "tmnt" && entry.is_visible));
+        assert!(!result
+            .snapshot
+            .imported_games
+            .iter()
+            .any(|game| game.machine_name == "mame"));
 
         let _ = fs::remove_file(path);
         let _ = fs::remove_dir_all(library_root);

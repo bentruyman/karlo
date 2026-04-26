@@ -129,10 +129,25 @@ pub fn scan_rom_roots(rom_roots: &[String]) -> Result<HashSet<String>, String> {
             continue;
         }
 
-        scan_path(&path, &mut discovered)?;
+        scan_root(&path, &mut discovered)?;
     }
 
     Ok(discovered)
+}
+
+fn scan_root(path: &Path, discovered: &mut HashSet<String>) -> Result<(), String> {
+    let metadata = fs::metadata(path).map_err(|error| error.to_string())?;
+
+    if metadata.is_dir() {
+        for entry in fs::read_dir(path).map_err(|error| error.to_string())? {
+            let entry = entry.map_err(|error| error.to_string())?;
+            scan_path(&entry.path(), discovered)?;
+        }
+
+        return Ok(());
+    }
+
+    scan_path(path, discovered)
 }
 
 fn scan_path(path: &Path, discovered: &mut HashSet<String>) -> Result<(), String> {
@@ -252,6 +267,7 @@ mod tests {
         assert!(discovered.contains("galaga"));
         assert!(discovered.contains("mspacman"));
         assert!(discovered.contains("pacman"));
+        assert!(!discovered.contains(root.file_name().unwrap().to_str().unwrap()));
 
         let _ = fs::remove_dir_all(root);
     }

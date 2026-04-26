@@ -53,6 +53,14 @@ games. The optional `mame.ini` path is used as MAME's `-inipath` directory.
 Press the launch control on a selected game to hide Karlo, run MAME for that
 machine, then return to the same frontend state when MAME exits.
 
+### ROM and Media Scanning
+
+Use the hidden service menu to configure ROM and media roots, then run the
+library scan from the Library section. Scanned ROM archives or ROM directories
+are added to the local SQLite catalog when they are not already known, marked
+available, and made visible in the cabinet library. A later MAME catalog import
+can replace placeholder titles and metadata with MAME's `-listxml` data.
+
 ### Repo Shape
 
 - `docs/` for planning and project notes
