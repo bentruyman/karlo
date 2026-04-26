@@ -68,6 +68,13 @@ import type {
 } from "./app/types";
 
 const ATTRACT_MODE_STEP_MS = 3_600;
+const ATTRACT_LOGO_COLORS = [
+  "#f8d84f",
+  "#89e27c",
+  "#61d8ff",
+  "#ff6d75",
+  "#f7f1ff",
+];
 const VISIBLE_ROWS = 14;
 const SERVICE_CODE_WINDOW_MS = 1_400;
 const HANDLED_KEYS = new Set([
@@ -747,9 +754,33 @@ export default function App() {
     }
   });
 
+  const handleUserActivity = useEffectEvent(() => {
+    noteInteraction();
+  });
+
   useEffect(() => {
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
+  }, []);
+
+  useEffect(() => {
+    const options = { passive: true };
+    const activityEvents = [
+      "pointerdown",
+      "pointermove",
+      "touchstart",
+      "wheel",
+    ] as const;
+
+    for (const eventName of activityEvents) {
+      window.addEventListener(eventName, handleUserActivity, options);
+    }
+
+    return () => {
+      for (const eventName of activityEvents) {
+        window.removeEventListener(eventName, handleUserActivity);
+      }
+    };
   }, []);
 
   useEffect(() => {
@@ -822,6 +853,8 @@ export default function App() {
           <ControlHints launchStatus={launchStatus} />
         </div>
 
+        {isAttractMode && !isServiceOpen && <AttractScreensaver />}
+
         {isSettingsOpen && (
           <ServiceMenu
             cabinetConfig={activeCabinetConfig}
@@ -868,6 +901,168 @@ export default function App() {
             onSave={() => activateCalibrationAction("save")}
           />
         )}
+      </div>
+    </div>
+  );
+}
+
+function AttractScreensaver() {
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  const logoRef = useRef<HTMLDivElement | null>(null);
+  const stateRef = useRef({
+    x: 0,
+    y: 0,
+    vx: 185,
+    vy: 142,
+    colorIndex: 0,
+    isReady: false,
+  });
+
+  useEffect(() => {
+    const container = containerRef.current;
+    const logo = logoRef.current;
+    if (!container || !logo) return;
+
+    const containerEl = container;
+    const logoEl = logo;
+    let animationFrame = 0;
+    let previousTimestamp = performance.now();
+
+    function fitToBounds() {
+      const containerRect = containerEl.getBoundingClientRect();
+      const logoRect = logoEl.getBoundingClientRect();
+      const state = stateRef.current;
+
+      state.x = Math.min(
+        Math.max(state.x, 0),
+        Math.max(containerRect.width - logoRect.width, 0),
+      );
+      state.y = Math.min(
+        Math.max(state.y, 0),
+        Math.max(containerRect.height - logoRect.height, 0),
+      );
+
+      if (!state.isReady) {
+        state.x = Math.max((containerRect.width - logoRect.width) * 0.28, 0);
+        state.y = Math.max((containerRect.height - logoRect.height) * 0.42, 0);
+        state.isReady = true;
+      }
+    }
+
+    function tick(timestamp: number) {
+      const containerRect = containerEl.getBoundingClientRect();
+      const logoRect = logoEl.getBoundingClientRect();
+      const state = stateRef.current;
+      const elapsedSeconds = Math.min((timestamp - previousTimestamp) / 1_000, 0.05);
+      let bounced = false;
+
+      previousTimestamp = timestamp;
+      state.x += state.vx * elapsedSeconds;
+      state.y += state.vy * elapsedSeconds;
+
+      const maxX = Math.max(containerRect.width - logoRect.width, 0);
+      const maxY = Math.max(containerRect.height - logoRect.height, 0);
+
+      if (state.x <= 0 || state.x >= maxX) {
+        state.x = Math.min(Math.max(state.x, 0), maxX);
+        state.vx *= -1;
+        bounced = true;
+      }
+
+      if (state.y <= 0 || state.y >= maxY) {
+        state.y = Math.min(Math.max(state.y, 0), maxY);
+        state.vy *= -1;
+        bounced = true;
+      }
+
+      if (bounced) {
+        state.colorIndex = (state.colorIndex + 1) % ATTRACT_LOGO_COLORS.length;
+        logoEl.style.setProperty(
+          "--attract-logo-color",
+          ATTRACT_LOGO_COLORS[state.colorIndex],
+        );
+      }
+
+      logoEl.style.transform = `translate3d(${state.x}px, ${state.y}px, 0)`;
+      animationFrame = requestAnimationFrame(tick);
+    }
+
+    const resizeObserver = new ResizeObserver(fitToBounds);
+    resizeObserver.observe(containerEl);
+    resizeObserver.observe(logoEl);
+    fitToBounds();
+    logoEl.style.setProperty("--attract-logo-color", ATTRACT_LOGO_COLORS[0]);
+    animationFrame = requestAnimationFrame(tick);
+
+    return () => {
+      cancelAnimationFrame(animationFrame);
+      resizeObserver.disconnect();
+    };
+  }, []);
+
+  return (
+    <div
+      ref={containerRef}
+      className="absolute inset-0 z-10 overflow-hidden bg-black"
+      aria-hidden
+    >
+      <div
+        aria-hidden
+        className="absolute inset-0 opacity-45"
+        style={{
+          background:
+            "radial-gradient(circle at 50% 50%, rgba(248,216,79,0.08), transparent 42%), repeating-linear-gradient(0deg, rgba(255,255,255,0.035) 0, rgba(255,255,255,0.035) 1px, transparent 1px, transparent 0.85cqh)",
+        }}
+      />
+
+      <div
+        ref={logoRef}
+        className="absolute left-0 top-0 grid place-items-center font-display leading-none"
+        style={{
+          width: "11.5cqw",
+          minWidth: "6rem",
+          aspectRatio: "1 / 1",
+          color: "var(--attract-logo-color, var(--color-cab-accent))",
+          filter:
+            "drop-shadow(0 0 1.45cqh color-mix(in srgb, var(--attract-logo-color, var(--color-cab-accent)) 55%, transparent))",
+          willChange: "transform",
+        }}
+      >
+        <div
+          className="relative grid h-full w-full place-items-center rounded-full border-[0.5cqh]"
+          style={{
+            borderColor: "currentColor",
+            background:
+              "radial-gradient(circle at 42% 34%, color-mix(in srgb, currentColor 34%, transparent), rgba(0,0,0,0.08) 32%, rgba(0,0,0,0.66) 72%), conic-gradient(from 18deg, currentColor 0 8deg, transparent 8deg 22deg, currentColor 22deg 30deg, transparent 30deg 45deg)",
+            boxShadow:
+              "inset 0 0 0 0.75cqh rgba(0,0,0,0.68), inset 0 0 1.6cqh color-mix(in srgb, currentColor 26%, transparent)",
+          }}
+        >
+          <div
+            aria-hidden
+            className="absolute inset-[13%] rounded-full border-[0.26cqh]"
+            style={{ borderColor: "color-mix(in srgb, currentColor 72%, transparent)" }}
+          />
+          <div
+            aria-hidden
+            className="absolute inset-[25%] rounded-full bg-black/65"
+            style={{
+              boxShadow:
+                "0 0 0 0.28cqh color-mix(in srgb, currentColor 64%, transparent), inset 0 0 1cqh rgba(0,0,0,0.85)",
+            }}
+          />
+          <div
+            className="relative font-display"
+            style={{
+              fontSize: "7.4cqh",
+              letterSpacing: 0,
+              textShadow:
+                "0 0.18cqh 0 #000, 0 0 1cqh color-mix(in srgb, currentColor 72%, transparent)",
+            }}
+          >
+            K
+          </div>
+        </div>
       </div>
     </div>
   );
