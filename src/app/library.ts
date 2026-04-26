@@ -18,8 +18,32 @@ export interface BrowseViewSummary {
   statValue: number;
 }
 
+const TRAILING_TITLE_METADATA_PATTERN = /\s*(?:\(([^()]*)\)|\[([^\]]*)\])\s*$/;
+const TITLE_METADATA_MARKERS = [
+  /\b(?:rev(?:ision)?|set|ver(?:sion)?|proto(?:type)?|bootleg|hack)\b/i,
+  /\b(?:u\.?s\.?a?|japan(?:ese)?|world|euro(?:pe|pean)?|asia(?:n)?|korea(?:n)?|taiwan(?:ese)?|china|chinese|hong kong|brazil(?:ian)?|canada|canadian|australia(?:n)?|new zealand|nz|italy|italian|france|french|germany|german|spain|spanish|uk)\b/i,
+  /\b(?:[a-z]{2,4}\d{2,}|\d{6,})\b/i,
+];
+
 function compareByTitle(left: GameRecord, right: GameRecord) {
   return left.title.localeCompare(right.title);
+}
+
+export function formatGameTitleForDisplay(title: string) {
+  const fallback = title.trim();
+  let displayTitle = fallback.replace(/\s+/g, " ");
+
+  while (displayTitle.length > 0) {
+    const match = displayTitle.match(TRAILING_TITLE_METADATA_PATTERN);
+    if (!match?.index) break;
+
+    const metadata = match[1] ?? match[2] ?? "";
+    if (!TITLE_METADATA_MARKERS.some((marker) => marker.test(metadata))) break;
+
+    displayTitle = displayTitle.slice(0, match.index).trim();
+  }
+
+  return displayTitle || fallback;
 }
 
 export function buildGameRecords(
@@ -43,6 +67,7 @@ export function buildGameRecords(
         {
           id: game.machineName,
           ...game,
+          title: formatGameTitleForDisplay(game.title),
           isFavorite: libraryEntry.isFavorite,
           wasRecentlyPlayed: recentByMachine.has(game.machineName),
         },

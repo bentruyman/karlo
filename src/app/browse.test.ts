@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 
 import {
   buildGameRecords,
+  formatGameTitleForDisplay,
   getBrowseGroupState,
   getBrowseViewSummary,
   getGamesForView,
@@ -146,6 +147,43 @@ function titlesFor(games: GameRecord[]) {
 }
 
 describe("buildGameRecords", () => {
+  test("uses front-end display titles without trailing MAME metadata", () => {
+    const importedGames: ImportedGameRecord[] = [
+      {
+        machineName: "galaga",
+        title: "Galaga (US SET 1)",
+        year: 1981,
+        manufacturer: "Namco",
+        genre: "Fixed Shooter",
+        romAvailable: true,
+        artworkPaths: [],
+      },
+      {
+        machineName: "robotron",
+        title: "Robotron: 2084 (REV 2)",
+        year: 1982,
+        manufacturer: "Williams",
+        genre: "Arena Shooter",
+        romAvailable: true,
+        artworkPaths: [],
+      },
+    ];
+    const libraryEntries: LibraryEntryRecord[] = importedGames.map(
+      (game, index) => ({
+        machineName: game.machineName,
+        isVisible: true,
+        isFavorite: false,
+        browseSortOrder: index,
+        includeInAttractMode: true,
+      }),
+    );
+
+    expect(titlesFor(buildGameRecords(importedGames, libraryEntries, []))).toEqual([
+      "Galaga",
+      "Robotron: 2084",
+    ]);
+  });
+
   test("joins imported catalog, curated library entries, and recent history", () => {
     const importedGames: ImportedGameRecord[] = [
       {
@@ -286,6 +324,25 @@ describe("buildGameRecords", () => {
         wasRecentlyPlayed: false,
       },
     ]);
+  });
+});
+
+describe("formatGameTitleForDisplay", () => {
+  test("removes trailing region, set, and revision metadata", () => {
+    expect(formatGameTitleForDisplay("Galaga (US SET 1)")).toBe("Galaga");
+    expect(formatGameTitleForDisplay("Robotron: 2084 (REV 2)")).toBe(
+      "Robotron: 2084",
+    );
+    expect(formatGameTitleForDisplay("Wonder Boy (World) (set 1)")).toBe(
+      "Wonder Boy",
+    );
+    expect(formatGameTitleForDisplay("Alpha [ver AAA]")).toBe("Alpha");
+  });
+
+  test("preserves parenthetical title text that does not look like metadata", () => {
+    expect(formatGameTitleForDisplay("Game Title (Deluxe Edition)")).toBe(
+      "Game Title (Deluxe Edition)",
+    );
   });
 });
 
