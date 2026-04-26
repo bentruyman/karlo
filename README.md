@@ -55,11 +55,13 @@ machine, then return to the same frontend state when MAME exits.
 
 ### ROM and Media Scanning
 
-Use the hidden service menu to configure ROM and media roots, then run the
-library scan from the Library section. Scanned ROM archives or ROM directories
-are added to the local SQLite catalog when they are not already known, marked
-available, and made visible in the cabinet library. A later MAME catalog import
-can replace placeholder titles and metadata with MAME's `-listxml` data.
+Use the hidden service menu to configure ROM roots, media roots, and an optional
+MAME category INI path, then run the library scan from the Library section.
+Scanned ROM archives or ROM directories are added to the local SQLite catalog
+when they are not already known, marked available, and made visible in the
+cabinet library. The scan also imports MAME `-listxml` metadata when a MAME
+executable is configured, and uses the category INI file to populate browse
+genres when available.
 
 ### Repo Shape
 

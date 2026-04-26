@@ -17,7 +17,6 @@ import {
 import {
   DEFAULT_LIBRARY_SNAPSHOT,
   DEFAULT_FRONTEND_BOOTSTRAP,
-  importMameCatalog,
   launchMameGame,
   loadCabinetConfig,
   loadFrontendBootstrap,
@@ -289,11 +288,6 @@ export default function App() {
   }
 
   function activateServicePanelAction(action: ServicePanelActionId) {
-    if (action === "importCatalog") {
-      void runCatalogImport();
-      return;
-    }
-
     if (action === "scanRoms") {
       void runRomScan();
       return;
@@ -472,29 +466,6 @@ export default function App() {
       setSettingsStatus({
         kind: "saved",
         message: "Cabinet settings saved to SQLite.",
-      });
-    }
-  });
-
-  const runCatalogImport = useEffectEvent(async () => {
-    const savedConfig = await persistSettingsDraft({
-      requireMameExecutablePath: true,
-    });
-    if (!savedConfig) return;
-
-    setSettingsStatus("saving");
-
-    try {
-      const result = await importMameCatalog();
-      applyLibrarySnapshot(result.snapshot);
-      setSettingsStatus({ kind: "saved", message: result.message });
-    } catch (error) {
-      setSettingsStatus({
-        kind: "error",
-        message:
-          error instanceof Error
-            ? error.message
-            : "Could not import the MAME catalog.",
       });
     }
   });
@@ -862,7 +833,6 @@ export default function App() {
             fieldRefs={fieldRefs}
             onClose={closeSettings}
             onReset={resetSettingsDraft}
-            onImportCatalog={runCatalogImport}
             onScanRoms={runRomScan}
             onOpenCalibration={openCalibration}
             onSave={() => activateServiceAction("save")}
@@ -1486,7 +1456,6 @@ function ServiceMenu({
   fieldRefs,
   onClose,
   onReset,
-  onImportCatalog,
   onScanRoms,
   onOpenCalibration,
   onSave,
@@ -1507,7 +1476,6 @@ function ServiceMenu({
   >;
   onClose: () => void;
   onReset: () => void;
-  onImportCatalog: () => void;
   onScanRoms: () => void;
   onOpenCalibration: () => void;
   onSave: () => void;
@@ -1708,22 +1676,6 @@ function ServiceMenu({
                       onActivate={onFieldActivate}
                       onBlur={onFieldBlur}
                     />
-                    <ServicePanelLauncher
-                      title="IMPORT MAME XML"
-                      body="Run the configured MAME executable with -listxml and upsert machine identity, title, year, and manufacturer into the games table."
-                      hint="PRESS START TO IMPORT"
-                      isFocused={
-                        serviceFocus.zone === "panelActions" &&
-                        serviceFocus.action === "importCatalog"
-                      }
-                      onFocusChange={() =>
-                        onFocusChange({
-                          zone: "panelActions",
-                          action: "importCatalog",
-                        })
-                      }
-                      onRun={onImportCatalog}
-                    />
                   </FieldGroup>
                 </SettingsSection>
               )}
@@ -1806,9 +1758,27 @@ function ServiceMenu({
                       onActivate={onFieldActivate}
                       onBlur={onFieldBlur}
                     />
+                    <TextInputField
+                      id="categoryIniPath"
+                      fieldKey="categoryIniPath"
+                      label="Optional category INI"
+                      name="categoryIniPath"
+                      value={settingsDraft.categoryIniPath}
+                      placeholder="/srv/karlo/library/metadata/Category.ini"
+                      isFocused={
+                        serviceFocus.zone === "field" &&
+                        serviceFocus.key === "categoryIniPath"
+                      }
+                      isEditing={editingField === "categoryIniPath"}
+                      fieldRefs={fieldRefs}
+                      onChange={(value) => onChange("categoryIniPath", value)}
+                      onFocusChange={onFocusChange}
+                      onActivate={onFieldActivate}
+                      onBlur={onFieldBlur}
+                    />
                     <ServicePanelLauncher
                       title="SCAN LIBRARY"
-                      body="Walk the configured ROM and media roots, update availability, and refresh resolved video and artwork paths."
+                      body="Walk the configured ROM and media roots, refresh resolved media paths, and import MAME and category metadata when configured."
                       hint="PRESS START TO SCAN"
                       isFocused={
                         serviceFocus.zone === "panelActions" &&

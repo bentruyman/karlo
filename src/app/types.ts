@@ -25,6 +25,7 @@ export interface CabinetPaths {
   mediaRoots: string[];
   previewVideoRoot: string;
   artworkRoot: string;
+  categoryIniPath: string | null;
 }
 
 export interface CabinetConfig {

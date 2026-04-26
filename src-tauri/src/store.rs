@@ -71,6 +71,10 @@ impl AppState {
                     "artwork_root",
                     default_config.paths.artwork_root,
                 ),
+                category_ini_path: settings
+                    .get("category_ini_path")
+                    .and_then(|value| non_empty_string(value))
+                    .or(default_config.paths.category_ini_path),
             },
             attract_timeout_seconds: settings
                 .get("attract_timeout_seconds")
@@ -182,56 +186,16 @@ impl AppState {
         let cabinet_config = self.load_cabinet_config()?;
         let imported_machines =
             importer::import_mame_catalog(&cabinet_config.paths.mame_executable_path)?;
+        let (category_genres, category_warning) =
+            load_category_genres(cabinet_config.paths.category_ini_path.as_deref());
         let mut connection = self.open_connection()?;
         let transaction = connection
             .transaction()
             .map_err(|error| error.to_string())?;
         let existing_games = self.load_existing_game_state(&transaction)?;
 
-        for machine in &imported_machines {
-            let existing = existing_games.get(&machine.machine_name);
-            let genre = existing
-                .and_then(|state| state.genre.clone())
-                .unwrap_or_else(|| "Unknown".to_owned());
-            let rom_available = existing.map(|state| state.rom_available).unwrap_or(false);
-            let video_path = existing.and_then(|state| state.video_path.clone());
-            let artwork_paths = existing
-                .map(|state| state.artwork_paths.clone())
-                .unwrap_or_default();
-
-            transaction
-                .execute(
-                    "INSERT INTO games (
-                        machine_name,
-                        title,
-                        year,
-                        manufacturer,
-                        genre,
-                        rom_available,
-                        video_path,
-                        artwork_paths_json
-                     ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
-                     ON CONFLICT(machine_name) DO UPDATE SET
-                        title = excluded.title,
-                        year = excluded.year,
-                        manufacturer = excluded.manufacturer,
-                        genre = excluded.genre,
-                        rom_available = excluded.rom_available,
-                        video_path = excluded.video_path,
-                        artwork_paths_json = excluded.artwork_paths_json",
-                    params![
-                        machine.machine_name,
-                        machine.title,
-                        i64::from(machine.year),
-                        machine.manufacturer,
-                        genre,
-                        rom_available,
-                        video_path,
-                        serde_json::to_string(&artwork_paths).map_err(|error| error.to_string())?,
-                    ],
-                )
-                .map_err(|error| error.to_string())?;
-        }
+        upsert_imported_machines(&transaction, &imported_machines, &existing_games)?;
+        let categorized_games_count = apply_category_genres(&transaction, &category_genres)?;
 
         transaction.commit().map_err(|error| error.to_string())?;
         let snapshot = self.load_library_snapshot()?;
@@ -245,9 +209,10 @@ impl AppState {
             snapshot,
             imported_games_count: imported_machines.len(),
             rom_available_count,
-            message: format!(
-                "Imported {} MAME machines from -listxml.",
-                imported_machines.len()
+            message: catalog_import_message(
+                imported_machines.len(),
+                categorized_games_count,
+                category_warning,
             ),
         })
     }
@@ -256,12 +221,20 @@ impl AppState {
         let cabinet_config = self.load_cabinet_config()?;
         let discovered_machine_names = importer::scan_rom_roots(&cabinet_config.paths.rom_roots)?;
         let media_roots = MediaRootCandidates::from_paths(&cabinet_config.paths);
+        let (category_genres, category_warning) =
+            load_category_genres(cabinet_config.paths.category_ini_path.as_deref());
+        let (imported_machines, import_warning) =
+            scan_mame_metadata(&cabinet_config.paths.mame_executable_path);
         let mut connection = self.open_connection()?;
         let transaction = connection
             .transaction()
             .map_err(|error| error.to_string())?;
+        let existing_games = self.load_existing_game_state(&transaction)?;
 
         let added_games_count = upsert_discovered_games(&transaction, &discovered_machine_names)?;
+        if !imported_machines.is_empty() {
+            upsert_imported_machines(&transaction, &imported_machines, &existing_games)?;
+        }
         let game_rows = load_game_rows(&transaction)?;
         for row in &game_rows {
             let is_available = discovered_machine_names.contains(&row.machine_name);
@@ -284,6 +257,7 @@ impl AppState {
                 .map_err(|error| error.to_string())?;
         }
 
+        let categorized_games_count = apply_category_genres(&transaction, &category_genres)?;
         seed_missing_library_entries(&transaction, &game_rows, &discovered_machine_names)?;
         transaction.commit().map_err(|error| error.to_string())?;
 
@@ -297,12 +271,16 @@ impl AppState {
         Ok(contract::LibraryMaintenanceResult {
             imported_games_count: snapshot.imported_games.len(),
             rom_available_count,
-            message: format!(
-                "Scanned {} ROM roots and refreshed media from {} roots; found {} available sets and added {} new catalog entries.",
-                cabinet_config.paths.rom_roots.len(),
-                media_roots.configured_roots_count,
-                rom_available_count,
-                added_games_count,
+            message: scan_message(
+                ScanMessageCounts {
+                    rom_roots_count: cabinet_config.paths.rom_roots.len(),
+                    media_roots_count: media_roots.configured_roots_count,
+                    rom_available_count,
+                    added_games_count,
+                    imported_metadata_count: imported_machines.len(),
+                    categorized_games_count,
+                },
+                [import_warning, category_warning],
             ),
             snapshot,
         })
@@ -653,6 +631,14 @@ fn settings_pairs(
             cabinet_config.paths.artwork_root.clone(),
         ),
         (
+            "category_ini_path".to_owned(),
+            cabinet_config
+                .paths
+                .category_ini_path
+                .clone()
+                .unwrap_or_default(),
+        ),
+        (
             "attract_timeout_seconds".to_owned(),
             cabinet_config.attract_timeout_seconds.to_string(),
         ),
@@ -737,6 +723,113 @@ fn load_game_rows(connection: &Connection) -> Result<Vec<GameRow>, String> {
         game_rows.push(row.map_err(|error| error.to_string())?);
     }
     Ok(game_rows)
+}
+
+fn upsert_imported_machines(
+    connection: &Connection,
+    imported_machines: &[importer::ImportedMachine],
+    existing_games: &HashMap<String, ExistingGameState>,
+) -> Result<(), String> {
+    for machine in imported_machines {
+        let existing = existing_games.get(&machine.machine_name);
+        let genre = existing
+            .and_then(|state| state.genre.clone())
+            .unwrap_or_else(|| "Unknown".to_owned());
+        let rom_available = existing.map(|state| state.rom_available).unwrap_or(false);
+        let video_path = existing.and_then(|state| state.video_path.clone());
+        let artwork_paths = existing
+            .map(|state| state.artwork_paths.clone())
+            .unwrap_or_default();
+
+        connection
+            .execute(
+                "INSERT INTO games (
+                    machine_name,
+                    title,
+                    year,
+                    manufacturer,
+                    genre,
+                    rom_available,
+                    video_path,
+                    artwork_paths_json
+                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
+                 ON CONFLICT(machine_name) DO UPDATE SET
+                    title = excluded.title,
+                    year = excluded.year,
+                    manufacturer = excluded.manufacturer,
+                    genre = excluded.genre,
+                    rom_available = excluded.rom_available,
+                    video_path = excluded.video_path,
+                    artwork_paths_json = excluded.artwork_paths_json",
+                params![
+                    machine.machine_name,
+                    machine.title,
+                    i64::from(machine.year),
+                    machine.manufacturer,
+                    genre,
+                    rom_available,
+                    video_path,
+                    serde_json::to_string(&artwork_paths).map_err(|error| error.to_string())?,
+                ],
+            )
+            .map_err(|error| error.to_string())?;
+    }
+
+    Ok(())
+}
+
+fn apply_category_genres(
+    connection: &Connection,
+    category_genres: &HashMap<String, String>,
+) -> Result<usize, String> {
+    let mut entries = category_genres.iter().collect::<Vec<_>>();
+    entries.sort_by(|left, right| left.0.cmp(right.0));
+    let mut categorized_games_count = 0;
+
+    for (machine_name, genre) in entries {
+        categorized_games_count += connection
+            .execute(
+                "UPDATE games SET genre = ?2 WHERE machine_name = ?1",
+                params![machine_name, genre],
+            )
+            .map_err(|error| error.to_string())?;
+    }
+
+    Ok(categorized_games_count)
+}
+
+fn load_category_genres(
+    category_ini_path: Option<&str>,
+) -> (HashMap<String, String>, Option<String>) {
+    let Some(category_ini_path) = category_ini_path.and_then(non_empty_string) else {
+        return (HashMap::new(), None);
+    };
+
+    match importer::import_category_ini(&category_ini_path) {
+        Ok(categories) => (categories, None),
+        Err(error) => (
+            HashMap::new(),
+            Some(format!(
+                "Could not load category metadata from {category_ini_path}: {error}"
+            )),
+        ),
+    }
+}
+
+fn scan_mame_metadata(
+    mame_executable_path: &str,
+) -> (Vec<importer::ImportedMachine>, Option<String>) {
+    if non_empty_string(mame_executable_path).is_none() {
+        return (Vec::new(), None);
+    }
+
+    match importer::import_mame_catalog(mame_executable_path) {
+        Ok(machines) => (machines, None),
+        Err(error) => (
+            Vec::new(),
+            Some(format!("Could not import MAME metadata: {error}")),
+        ),
+    }
 }
 
 fn upsert_discovered_games(
@@ -844,6 +937,49 @@ fn next_library_sort_order(connection: &Connection) -> Result<i64, String> {
             |row| row.get(0),
         )
         .map_err(|error| error.to_string())
+}
+
+fn catalog_import_message(
+    imported_metadata_count: usize,
+    categorized_games_count: usize,
+    category_warning: Option<String>,
+) -> String {
+    let mut message = format!(
+        "Imported {imported_metadata_count} MAME machines from -listxml and applied {categorized_games_count} category genres."
+    );
+    append_warnings(&mut message, [category_warning]);
+    message
+}
+
+struct ScanMessageCounts {
+    rom_roots_count: usize,
+    media_roots_count: usize,
+    rom_available_count: usize,
+    added_games_count: usize,
+    imported_metadata_count: usize,
+    categorized_games_count: usize,
+}
+
+fn scan_message(counts: ScanMessageCounts, warnings: [Option<String>; 2]) -> String {
+    let mut message = format!(
+        "Scanned {} ROM roots and refreshed media from {} roots; found {} available sets, added {} new catalog entries, imported {} MAME metadata rows, and applied {} category genres.",
+        counts.rom_roots_count,
+        counts.media_roots_count,
+        counts.rom_available_count,
+        counts.added_games_count,
+        counts.imported_metadata_count,
+        counts.categorized_games_count,
+    );
+    append_warnings(&mut message, warnings);
+    message
+}
+
+fn append_warnings<const N: usize>(message: &mut String, warnings: [Option<String>; N]) {
+    let warnings = warnings.into_iter().flatten().collect::<Vec<_>>();
+    if !warnings.is_empty() {
+        message.push_str(" Warnings: ");
+        message.push_str(&warnings.join(" "));
+    }
 }
 
 struct MediaRootCandidates {
@@ -1162,6 +1298,73 @@ mod tests {
             .imported_games
             .iter()
             .any(|game| game.machine_name == "mame"));
+
+        let _ = fs::remove_file(path);
+        let _ = fs::remove_dir_all(library_root);
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn rom_scan_imports_mame_metadata_and_category_genres() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let path = temp_database_path("rom-scan-metadata");
+        let library_root = temp_library_path("rom-scan-metadata");
+        let rom_root = library_root.join("roms/mame");
+        let category_ini_path = library_root.join("metadata/Category.ini");
+        let mame_executable_path = library_root.join("mame-listxml");
+        let state = AppState {
+            db_path: path.clone(),
+        };
+        state.ensure_schema().unwrap();
+        state.seed_default_settings().unwrap();
+
+        fs::create_dir_all(&rom_root).unwrap();
+        fs::create_dir_all(category_ini_path.parent().unwrap()).unwrap();
+        fs::write(rom_root.join("tmnt.zip"), []).unwrap();
+        fs::write(&category_ini_path, "[Category]\ntmnt=Beat 'em Up\n").unwrap();
+        fs::write(
+            &mame_executable_path,
+            r#"#!/usr/bin/env bash
+cat <<'XML'
+<mame>
+  <machine name="tmnt" runnable="yes">
+    <description>Teenage Mutant Ninja Turtles</description>
+    <year>1989</year>
+    <manufacturer>Konami</manufacturer>
+  </machine>
+</mame>
+XML
+"#,
+        )
+        .unwrap();
+        let mut permissions = fs::metadata(&mame_executable_path).unwrap().permissions();
+        permissions.set_mode(0o755);
+        fs::set_permissions(&mame_executable_path, permissions).unwrap();
+
+        let mut cabinet_config = contract::default_cabinet_config();
+        cabinet_config.paths.mame_executable_path =
+            mame_executable_path.to_string_lossy().into_owned();
+        cabinet_config.paths.rom_roots = vec![rom_root.to_string_lossy().into_owned()];
+        cabinet_config.paths.category_ini_path =
+            Some(category_ini_path.to_string_lossy().into_owned());
+        state.save_cabinet_config(&cabinet_config).unwrap();
+
+        let result = state.scan_rom_roots().unwrap();
+        let game = result
+            .snapshot
+            .imported_games
+            .iter()
+            .find(|game| game.machine_name == "tmnt")
+            .unwrap();
+
+        assert_eq!(game.title, "Teenage Mutant Ninja Turtles");
+        assert_eq!(game.year, 1989);
+        assert_eq!(game.manufacturer, "Konami");
+        assert_eq!(game.genre, "Beat 'em Up");
+        assert!(game.rom_available);
+        assert!(result.message.contains("imported 1 MAME metadata rows"));
+        assert!(result.message.contains("applied 1 category genres"));
 
         let _ = fs::remove_file(path);
         let _ = fs::remove_dir_all(library_root);

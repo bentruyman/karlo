@@ -1,5 +1,5 @@
 use std::{
-    collections::HashSet,
+    collections::{HashMap, HashSet},
     ffi::OsStr,
     fs,
     path::{Path, PathBuf},
@@ -120,6 +120,64 @@ pub fn parse_mame_listxml(xml: &str) -> Result<Vec<ImportedMachine>, String> {
     Ok(machines)
 }
 
+pub fn import_category_ini(category_ini_path: &str) -> Result<HashMap<String, String>, String> {
+    let contents = fs::read_to_string(category_ini_path).map_err(|error| error.to_string())?;
+    Ok(parse_category_ini(&contents))
+}
+
+pub fn parse_category_ini(contents: &str) -> HashMap<String, String> {
+    let mut categories = HashMap::new();
+    let mut current_section: Option<String> = None;
+
+    for line in contents.lines() {
+        let line = line.trim();
+        if line.is_empty() || line.starts_with(';') || line.starts_with('#') {
+            continue;
+        }
+
+        if line.starts_with('[') && line.ends_with(']') {
+            let section = line.trim_start_matches('[').trim_end_matches(']').trim();
+            current_section = if section.is_empty() {
+                None
+            } else {
+                Some(section.to_owned())
+            };
+            continue;
+        }
+
+        if current_section
+            .as_deref()
+            .map(is_ignored_section)
+            .unwrap_or(false)
+        {
+            continue;
+        }
+
+        if let Some((machine_name, category)) = line.split_once('=') {
+            if current_section
+                .as_deref()
+                .map(is_key_value_category_section)
+                .unwrap_or(true)
+            {
+                insert_category(&mut categories, machine_name, category);
+            }
+            continue;
+        }
+
+        let Some(section) = current_section.as_deref() else {
+            continue;
+        };
+
+        if is_metadata_section(section) {
+            continue;
+        }
+
+        insert_category(&mut categories, line, section);
+    }
+
+    categories
+}
+
 pub fn scan_rom_roots(rom_roots: &[String]) -> Result<HashSet<String>, String> {
     let mut discovered = HashSet::new();
 
@@ -210,6 +268,36 @@ fn unescape_xml(value: &str) -> String {
         .replace("&gt;", ">")
 }
 
+fn insert_category(categories: &mut HashMap<String, String>, machine_name: &str, category: &str) {
+    let machine_name = machine_name.trim();
+    let category = category.trim();
+
+    if !machine_name.is_empty() && !category.is_empty() {
+        categories.insert(machine_name.to_owned(), category.to_owned());
+    }
+}
+
+fn is_metadata_section(section: &str) -> bool {
+    matches!(
+        section.to_ascii_lowercase().as_str(),
+        "category" | "root_folder" | "folder_settings" | "version" | "veradded"
+    )
+}
+
+fn is_key_value_category_section(section: &str) -> bool {
+    matches!(
+        section.to_ascii_lowercase().as_str(),
+        "category" | "root_folder"
+    )
+}
+
+fn is_ignored_section(section: &str) -> bool {
+    matches!(
+        section.to_ascii_lowercase().as_str(),
+        "folder_settings" | "version" | "veradded"
+    )
+}
+
 #[derive(Debug, Clone)]
 struct WorkingMachine {
     machine_name: String,
@@ -253,6 +341,49 @@ mod tests {
         assert_eq!(machines.len(), 2);
         assert_eq!(machines[0].machine_name, "galaga");
         assert_eq!(machines[1].title, "Street Fighter II & Champion Edition");
+    }
+
+    #[test]
+    fn parse_category_ini_extracts_machine_categories() {
+        let ini = r#"
+        ; Progetto-style category section
+        [Category]
+        galaga=Shooter / Gallery
+
+        [Platform]
+        dkong
+        bublbobl
+
+        [FOLDER_SETTINGS]
+        RootFolderIcon = cust1.ico
+
+        [VerAdded]
+        zaxxon=0.033
+
+        [Driving]
+        outrun
+        "#;
+
+        let categories = parse_category_ini(ini);
+
+        assert_eq!(
+            categories.get("galaga").map(String::as_str),
+            Some("Shooter / Gallery")
+        );
+        assert_eq!(
+            categories.get("dkong").map(String::as_str),
+            Some("Platform")
+        );
+        assert_eq!(
+            categories.get("bublbobl").map(String::as_str),
+            Some("Platform")
+        );
+        assert_eq!(
+            categories.get("outrun").map(String::as_str),
+            Some("Driving")
+        );
+        assert!(!categories.contains_key("RootFolderIcon"));
+        assert!(!categories.contains_key("zaxxon"));
     }
 
     #[test]

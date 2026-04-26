@@ -36,7 +36,7 @@ pub const TABLES: [TableDefinition; 4] = [
     },
 ];
 
-pub const SETTINGS: [SettingDefinition; 8] = [
+pub const SETTINGS: [SettingDefinition; 9] = [
     SettingDefinition {
         key: "mame_executable_path",
         purpose: "MAME launcher executable used for cabinet launches.",
@@ -72,6 +72,12 @@ pub const SETTINGS: [SettingDefinition; 8] = [
         purpose: "Preferred artwork root used for marquees and flyers.",
         kind: "path",
         required: true,
+    },
+    SettingDefinition {
+        key: "category_ini_path",
+        purpose: "Optional MAME category INI used to populate browse genres.",
+        kind: "optionalPath",
+        required: false,
     },
     SettingDefinition {
         key: "attract_timeout_seconds",

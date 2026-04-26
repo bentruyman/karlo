@@ -15,6 +15,7 @@ const baseConfig: CabinetConfig = {
     mediaRoots: ["/media"],
     previewVideoRoot: "/media/previews",
     artworkRoot: "/media/artwork",
+    categoryIniPath: "/metadata/Category.ini",
   },
   attractTimeoutSeconds: 12,
   displayCalibration: {
@@ -52,6 +53,7 @@ describe("parseCabinetConfigDraft", () => {
         mameExecutablePath: "  /usr/bin/mame  ",
         mameIniPath: "   ",
         romRootsText: "\n/roms/main\n\n/roms/extra\n",
+        categoryIniPath: "   ",
       },
       baseConfig,
     );
@@ -65,6 +67,7 @@ describe("parseCabinetConfigDraft", () => {
           mameExecutablePath: "/usr/bin/mame",
           mameIniPath: null,
           romRoots: ["/roms/main", "/roms/extra"],
+          categoryIniPath: null,
         },
       },
     });
@@ -123,6 +126,7 @@ describe("parseCabinetConfigDraft", () => {
           mediaRootsText: "",
           previewVideoRoot: "",
           artworkRoot: "",
+          categoryIniPath: "/metadata/Category.ini",
         },
         baseConfig,
       ),

@@ -15,6 +15,7 @@ const baseDraft: CabinetConfigDraft = {
   mediaRootsText: "/media",
   previewVideoRoot: "/videos",
   artworkRoot: "/artwork",
+  categoryIniPath: "/metadata/Category.ini",
   attractTimeoutSeconds: "12",
   topInsetPercent: "5",
   rightInsetPercent: "6",

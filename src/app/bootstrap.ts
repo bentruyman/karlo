@@ -64,6 +64,12 @@ export const DEFAULT_RUNTIME_CONTRACT: RuntimeContract = {
         required: true,
       },
       {
+        key: "category_ini_path",
+        purpose: "Optional MAME category INI used to populate browse genres.",
+        kind: "optionalPath",
+        required: false,
+      },
+      {
         key: "attract_timeout_seconds",
         purpose: "Idle timeout before attract mode starts cycling.",
         kind: "seconds",
@@ -108,6 +114,7 @@ export const DEFAULT_FRONTEND_BOOTSTRAP: FrontendBootstrap = {
       mediaRoots: [],
       previewVideoRoot: "",
       artworkRoot: "",
+      categoryIniPath: "/srv/karlo/library/metadata/Category.ini",
     },
     attractTimeoutSeconds: 12,
     displayCalibration: {

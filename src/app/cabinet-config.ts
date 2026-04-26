@@ -7,6 +7,7 @@ export interface CabinetConfigDraft {
   mediaRootsText: string;
   previewVideoRoot: string;
   artworkRoot: string;
+  categoryIniPath: string;
   attractTimeoutSeconds: string;
   topInsetPercent: string;
   rightInsetPercent: string;
@@ -24,6 +25,7 @@ export function cabinetConfigToDraft(
     mediaRootsText: cabinetConfig.paths.mediaRoots.join("\n"),
     previewVideoRoot: cabinetConfig.paths.previewVideoRoot,
     artworkRoot: cabinetConfig.paths.artworkRoot,
+    categoryIniPath: cabinetConfig.paths.categoryIniPath ?? "",
     attractTimeoutSeconds: String(cabinetConfig.attractTimeoutSeconds),
     topInsetPercent: String(cabinetConfig.displayCalibration.topInsetPercent),
     rightInsetPercent: String(cabinetConfig.displayCalibration.rightInsetPercent),
@@ -111,6 +113,7 @@ export function parseCabinetConfigDraft(
         mediaRoots: mediaRoots.value,
         previewVideoRoot: draft.previewVideoRoot.trim(),
         artworkRoot: draft.artworkRoot.trim(),
+        categoryIniPath: optionalValue(draft.categoryIniPath),
       },
       attractTimeoutSeconds: attractTimeoutSeconds.value,
       displayCalibration: {

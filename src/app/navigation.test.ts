@@ -18,7 +18,7 @@ describe("service navigation metadata", () => {
       "storage",
     ]);
     expect(getServiceSectionIndex("display")).toBe(2);
-    expect(getServicePanelActions("launch")).toEqual(["importCatalog"]);
+    expect(getServicePanelActions("launch")).toEqual([]);
     expect(getServicePanelActions("media")).toEqual(["scanRoms"]);
     expect(getServiceFieldKeys("storage")).toEqual([]);
     expect(getServicePanelActions("display")).toEqual(["openCalibration"]);
@@ -67,16 +67,18 @@ describe("moveServiceFocus", () => {
     expect(current).toEqual({ zone: "actions", action: "defaults" });
   });
 
-  test("moves from launch and media fields into panel actions", () => {
+  test("moves from launch fields into footer actions", () => {
     expect(
       moveServiceFocus({ zone: "field", key: "mameIniPath" }, "right", "launch"),
     ).toEqual({
-      zone: "panelActions",
-      action: "importCatalog",
+      zone: "actions",
+      action: "defaults",
     });
+  });
 
+  test("moves from media fields into panel actions", () => {
     expect(
-      moveServiceFocus({ zone: "field", key: "artworkRoot" }, "right", "media"),
+      moveServiceFocus({ zone: "field", key: "categoryIniPath" }, "right", "media"),
     ).toEqual({
       zone: "panelActions",
       action: "scanRoms",
@@ -87,8 +89,8 @@ describe("moveServiceFocus", () => {
     expect(
       moveServiceFocus({ zone: "actions", action: "defaults" }, "left", "launch"),
     ).toEqual({
-      zone: "panelActions",
-      action: "importCatalog",
+      zone: "field",
+      key: "mameIniPath",
     });
 
     expect(

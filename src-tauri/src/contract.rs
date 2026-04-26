@@ -4,6 +4,7 @@ use crate::db;
 
 const DEFAULT_VIEW: &str = "favorites";
 const DISPLAY_PROFILE: &str = "lcd-1440p-16:9";
+const DEFAULT_CATEGORY_INI_PATH: &str = "/srv/karlo/library/metadata/Category.ini";
 const VISIBLE_LIBRARY_RULE: &str =
     "Browse views operate on visible curated library entries, not the full imported catalog.";
 const FAVORITES_FALLBACK_RULE: &str =
@@ -37,6 +38,7 @@ pub struct CabinetPaths {
     pub media_roots: Vec<String>,
     pub preview_video_root: String,
     pub artwork_root: String,
+    pub category_ini_path: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
@@ -161,6 +163,7 @@ pub fn default_cabinet_config() -> CabinetConfig {
             media_roots: vec![],
             preview_video_root: String::new(),
             artwork_root: String::new(),
+            category_ini_path: Some(DEFAULT_CATEGORY_INI_PATH.to_owned()),
         },
         attract_timeout_seconds: 12,
         display_calibration: DisplayCalibration {
