@@ -10,6 +10,10 @@ on:
         required: false
         type: string
 
+concurrency:
+  group: linux-artifact-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   build:
     runs-on: ubuntu-22.04
@@ -23,8 +27,18 @@ jobs:
         with:
           bun-version: 1.3.11
 
+      - uses: actions/cache@v4
+        with:
+          path: ~/.bun/install/cache
+          key: bun-${{ runner.os }}-${{ hashFiles('bun.lock') }}
+          restore-keys: bun-${{ runner.os }}-
+
       - name: Install Rust
         run: rustup toolchain install stable --profile minimal
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: ./src-tauri -> target
 
       - name: Install Tauri Linux dependencies
         run: |
