@@ -123,6 +123,7 @@ export interface FrontendBootstrap {
   defaultView: BrowseViewId;
   cabinetConfig: CabinetConfig;
   curation: CurationContract;
+  mediaHttpBaseUrl: string | null;
 }
 
 export interface LibrarySnapshot {

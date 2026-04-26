@@ -125,6 +125,7 @@ export const DEFAULT_FRONTEND_BOOTSTRAP: FrontendBootstrap = {
     },
   },
   curation: DEFAULT_RUNTIME_CONTRACT.curation,
+  mediaHttpBaseUrl: null,
 };
 
 export const DEFAULT_LIBRARY_SNAPSHOT: LibrarySnapshot = {

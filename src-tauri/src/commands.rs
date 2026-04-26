@@ -1,7 +1,7 @@
 use serde::Serialize;
 use tauri::{AppHandle, Manager, State, WebviewWindow};
 
-use crate::{contract, db, launcher, store};
+use crate::{contract, db, launcher, media_server, store};
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -21,8 +21,12 @@ pub struct SchemaOverview {
 #[tauri::command]
 pub fn get_frontend_bootstrap(
     state: State<'_, store::AppState>,
+    media_server: State<'_, media_server::MediaHttpServer>,
 ) -> Result<contract::FrontendBootstrap, String> {
-    Ok(contract::frontend_bootstrap(state.load_cabinet_config()?))
+    Ok(contract::frontend_bootstrap(
+        state.load_cabinet_config()?,
+        Some(media_server.base_url().to_owned()),
+    ))
 }
 
 #[tauri::command]

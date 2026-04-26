@@ -2,10 +2,16 @@ import { convertFileSrc, isTauri } from "@tauri-apps/api/core";
 
 import type { GameRecord } from "./types";
 
+let mediaHttpBaseUrl: string | null = null;
+
 export type PreviewMedia =
   | { kind: "video"; path: string; src: string }
   | { kind: "image"; path: string; src: string }
   | { kind: "none" };
+
+export function setMediaHttpBaseUrl(baseUrl: string | null | undefined) {
+  mediaHttpBaseUrl = baseUrl?.trim() || null;
+}
 
 export function getPreviewMedia(
   game: GameRecord,
@@ -44,6 +50,9 @@ export function toMediaSrc(path: string) {
 }
 
 export function toVideoSrc(path: string) {
+  const httpSrc = toMediaHttpSrc(path);
+  if (httpSrc) return httpSrc;
+
   if (!isDeviceFilePath(path) || !isTauri()) return path;
 
   try {
@@ -55,6 +64,18 @@ export function toVideoSrc(path: string) {
 
 function toKarloMediaSrc(path: string) {
   return `karlo-media://localhost/${encodeURIComponent(path)}`;
+}
+
+function toMediaHttpSrc(path: string) {
+  if (!mediaHttpBaseUrl || !isDeviceFilePath(path)) return null;
+
+  try {
+    const url = new URL("/media", mediaHttpBaseUrl);
+    url.searchParams.set("path", path);
+    return url.toString();
+  } catch {
+    return null;
+  }
 }
 
 function isDeviceFilePath(path: string) {

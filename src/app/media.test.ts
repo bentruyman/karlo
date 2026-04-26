@@ -1,6 +1,11 @@
 import { describe, expect, test } from "bun:test";
 
-import { getPreviewMedia, toMediaSrc, toVideoSrc } from "./media";
+import {
+  getPreviewMedia,
+  setMediaHttpBaseUrl,
+  toMediaSrc,
+  toVideoSrc,
+} from "./media";
 import type { GameRecord } from "./types";
 
 const baseGame: GameRecord = {
@@ -80,6 +85,17 @@ describe("toMediaSrc", () => {
 
 describe("toVideoSrc", () => {
   test("leaves relative paths unchanged outside Tauri", () => {
+    setMediaHttpBaseUrl(null);
     expect(toVideoSrc("media/previews/1942.mp4")).toBe("media/previews/1942.mp4");
+  });
+
+  test("uses the media HTTP server for device file paths", () => {
+    setMediaHttpBaseUrl("http://127.0.0.1:43210");
+
+    expect(toVideoSrc("/srv/karlo/library/media/mame/videos/1942 one.mp4")).toBe(
+      "http://127.0.0.1:43210/media?path=%2Fsrv%2Fkarlo%2Flibrary%2Fmedia%2Fmame%2Fvideos%2F1942+one.mp4",
+    );
+
+    setMediaHttpBaseUrl(null);
   });
 });

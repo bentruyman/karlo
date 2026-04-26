@@ -17,20 +17,33 @@ pub fn handle_media_request(
         return text_response(StatusCode::BAD_REQUEST, "invalid media path");
     };
 
-    if !is_allowed_media_path(&path, configured_roots) {
+    media_response_for_path(
+        &path,
+        method == tauri::http::Method::HEAD,
+        request
+            .headers()
+            .get(header::RANGE)
+            .and_then(|value| value.to_str().ok()),
+        configured_roots,
+    )
+}
+
+pub fn media_response_for_path(
+    path: &PathBuf,
+    is_head_request: bool,
+    range_header: Option<&str>,
+    configured_roots: &[PathBuf],
+) -> Response<Vec<u8>> {
+    if !is_allowed_media_path(path, configured_roots) {
         return text_response(
             StatusCode::FORBIDDEN,
             "media path is outside the allowed roots",
         );
     }
 
-    let range = request
-        .headers()
-        .get(header::RANGE)
-        .and_then(|value| value.to_str().ok())
-        .and_then(|value| parse_byte_range(value));
+    let range = range_header.and_then(parse_byte_range);
 
-    file_response(&path, method == tauri::http::Method::HEAD, range)
+    file_response(path, is_head_request, range)
 }
 
 pub fn configured_media_roots(paths: &contract::CabinetPaths) -> Vec<PathBuf> {

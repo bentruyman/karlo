@@ -102,6 +102,7 @@ pub struct FrontendBootstrap {
     pub default_view: String,
     pub cabinet_config: CabinetConfig,
     pub curation: CurationContract,
+    pub media_http_base_url: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
@@ -175,11 +176,15 @@ pub fn default_cabinet_config() -> CabinetConfig {
     }
 }
 
-pub fn frontend_bootstrap(cabinet_config: CabinetConfig) -> FrontendBootstrap {
+pub fn frontend_bootstrap(
+    cabinet_config: CabinetConfig,
+    media_http_base_url: Option<String>,
+) -> FrontendBootstrap {
     FrontendBootstrap {
         default_view: DEFAULT_VIEW.to_owned(),
         cabinet_config,
         curation: curation_contract(),
+        media_http_base_url,
     }
 }
 
@@ -256,13 +261,20 @@ mod tests {
 
     #[test]
     fn frontend_bootstrap_exposes_cabinet_defaults() {
-        let bootstrap = frontend_bootstrap(default_cabinet_config());
+        let bootstrap = frontend_bootstrap(
+            default_cabinet_config(),
+            Some("http://127.0.0.1:43210".to_owned()),
+        );
 
         assert_eq!(bootstrap.default_view, "favorites");
         assert_eq!(bootstrap.cabinet_config.display_profile, "lcd-1440p-16:9");
         assert_eq!(bootstrap.cabinet_config.attract_timeout_seconds, 12);
         assert_eq!(bootstrap.curation.curated_library_table, "library_entries");
         assert_eq!(bootstrap.curation.browse_views.len(), 5);
+        assert_eq!(
+            bootstrap.media_http_base_url.as_deref(),
+            Some("http://127.0.0.1:43210")
+        );
     }
 
     #[test]

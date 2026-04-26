@@ -4,6 +4,7 @@ mod db;
 mod importer;
 mod launcher;
 mod media_protocol;
+mod media_server;
 mod seed;
 mod store;
 
@@ -27,7 +28,10 @@ pub fn run() {
         .setup(|app| {
             let state =
                 store::AppState::initialize(app).map_err(|error| io::Error::other(error))?;
+            let media_server = media_server::MediaHttpServer::start(state.clone())
+                .map_err(|error| io::Error::other(error))?;
             app.manage(state);
+            app.manage(media_server);
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
