@@ -39,6 +39,7 @@ Milestone 0 is now scaffolded at the repo root.
 - `bun test`
 - `bun run dev`
 - `bun run tauri:dev`
+- `bun run organize:library`
 - `bun run deploy:cabinet`
 
 The active app lives in:

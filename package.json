@@ -13,6 +13,7 @@
     "tauri:dev": "tauri dev",
     "tauri:build": "tauri build",
     "deploy:cabinet": "./ops/deploy-cabinet.sh",
+    "organize:library": "bun run ./ops/organize-arcade-library.ts",
     "sync:library": "./ops/sync-arcade-library.sh"
   },
   "dependencies": {
