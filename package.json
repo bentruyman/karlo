@@ -12,6 +12,7 @@
     "preview": "vite preview --host 0.0.0.0 --port 1420",
     "tauri:dev": "tauri dev",
     "tauri:build": "tauri build",
+    "curate:library": "bun run ./ops/curate-arcade-library.ts",
     "deploy:cabinet": "./ops/deploy-cabinet.sh",
     "organize:library": "bun run ./ops/organize-arcade-library.ts",
     "sync:library": "./ops/sync-arcade-library.sh"
