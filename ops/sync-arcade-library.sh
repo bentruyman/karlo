@@ -136,9 +136,9 @@ else
   fi
 fi
 
-RSYNC_ARGS=(-aH --partial --progress)
+RSYNC_ARGS=(-aH --partial --progress --itemize-changes --stats)
 if [[ "${DELETE}" == "1" ]]; then
-  RSYNC_ARGS+=(--delete)
+  RSYNC_ARGS+=(--delete --delete-before --force)
 fi
 if [[ "${DRY_RUN}" == "1" ]]; then
   RSYNC_ARGS+=(--dry-run)
@@ -147,6 +147,11 @@ fi
 echo "Syncing ${SOURCE}/ -> ${REMOTE}:${REMOTE_ROOT}/"
 if [[ "${DRY_RUN}" == "1" ]]; then
   echo "Dry run enabled; no remote files will be changed."
+fi
+if [[ "${DELETE}" == "1" ]]; then
+  echo "Delete enabled; remote files missing from the local library will be removed."
+else
+  echo "Delete disabled; remote-only files will be kept."
 fi
 
 rsync "${RSYNC_ARGS[@]}" \
