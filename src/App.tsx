@@ -59,7 +59,7 @@ import {
   getGamesForView,
   jumpBrowseGroup,
 } from "./app/library";
-import { getPreviewMedia } from "./app/media";
+import { getPreviewMedia, setMediaHttpBaseUrl } from "./app/media";
 import type {
   BrowseView,
   BrowseViewId,
@@ -179,6 +179,7 @@ export default function App() {
     void Promise.all([loadFrontendBootstrap(), loadLibrarySnapshot()]).then(
       ([nextBootstrap, librarySnapshot]) => {
         if (cancelled) return;
+        setMediaHttpBaseUrl(nextBootstrap.mediaHttpBaseUrl);
         setBootstrap(nextBootstrap);
         applyLibrarySnapshot(librarySnapshot);
       },

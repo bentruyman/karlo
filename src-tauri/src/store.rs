@@ -12,6 +12,7 @@ use crate::{contract, db, importer, seed};
 
 const DATABASE_FILENAME: &str = "karlo.sqlite3";
 
+#[derive(Clone)]
 pub struct AppState {
     db_path: PathBuf,
 }
