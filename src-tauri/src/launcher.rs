@@ -38,6 +38,17 @@ pub fn build_mame_launch(
         args.push(mame_ini_search_path(mame_ini_path).into_os_string());
     }
 
+    let rom_roots = cabinet_config
+        .paths
+        .rom_roots
+        .iter()
+        .filter_map(|root| non_empty_string(root))
+        .collect::<Vec<_>>();
+    if !rom_roots.is_empty() {
+        args.push(OsString::from("-rompath"));
+        args.push(OsString::from(join_mame_search_path(&rom_roots)));
+    }
+
     args.push(OsString::from(machine_name));
 
     Ok(MameLaunch {
@@ -80,6 +91,10 @@ fn mame_ini_search_path(mame_ini_path: &str) -> PathBuf {
         .unwrap_or_else(|| PathBuf::from("."))
 }
 
+fn join_mame_search_path(paths: &[&str]) -> String {
+    paths.join(";")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -116,6 +131,27 @@ mod tests {
         assert_eq!(
             args_as_strings(&launch),
             vec!["-inipath", "/etc/mame", "galaga"],
+        );
+    }
+
+    #[test]
+    fn build_mame_launch_passes_configured_rom_roots() {
+        let mut cabinet_config = cabinet_config();
+        cabinet_config.paths.rom_roots = vec![
+            "/srv/karlo/library/roms/mame".to_owned(),
+            " ".to_owned(),
+            "/mnt/arcade/roms".to_owned(),
+        ];
+
+        let launch = build_mame_launch(&cabinet_config, "sf2").unwrap();
+
+        assert_eq!(
+            args_as_strings(&launch),
+            vec![
+                "-rompath",
+                "/srv/karlo/library/roms/mame;/mnt/arcade/roms",
+                "sf2",
+            ],
         );
     }
 
