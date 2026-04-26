@@ -2,6 +2,7 @@ mod commands;
 mod contract;
 mod db;
 mod importer;
+mod media_protocol;
 mod seed;
 mod store;
 
@@ -12,9 +13,12 @@ use tauri::Manager;
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .register_uri_scheme_protocol("karlo-media", |_ctx, request| {
+            media_protocol::handle_media_request(request)
+        })
         .setup(|app| {
-            let state = store::AppState::initialize(app)
-                .map_err(|error| io::Error::other(error))?;
+            let state =
+                store::AppState::initialize(app).map_err(|error| io::Error::other(error))?;
             app.manage(state);
             Ok(())
         })

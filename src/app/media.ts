@@ -15,7 +15,7 @@ export function getPreviewMedia(
     return {
       kind: "video",
       path: game.videoPath,
-      src: toMediaSrc(game.videoPath),
+      src: toVideoSrc(game.videoPath),
     };
   }
 
@@ -41,6 +41,11 @@ export function toMediaSrc(path: string) {
   } catch {
     return path;
   }
+}
+
+export function toVideoSrc(path: string) {
+  if (!isDeviceFilePath(path) || !isTauri()) return path;
+  return `karlo-media://localhost/${encodeURIComponent(path)}`;
 }
 
 function isDeviceFilePath(path: string) {

@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-import { getPreviewMedia, toMediaSrc } from "./media";
+import { getPreviewMedia, toMediaSrc, toVideoSrc } from "./media";
 import type { GameRecord } from "./types";
 
 const baseGame: GameRecord = {
@@ -75,5 +75,11 @@ describe("getPreviewMedia", () => {
 describe("toMediaSrc", () => {
   test("leaves relative paths unchanged outside Tauri", () => {
     expect(toMediaSrc("media/previews/1942.mp4")).toBe("media/previews/1942.mp4");
+  });
+});
+
+describe("toVideoSrc", () => {
+  test("leaves relative paths unchanged outside Tauri", () => {
+    expect(toVideoSrc("media/previews/1942.mp4")).toBe("media/previews/1942.mp4");
   });
 });

@@ -1241,14 +1241,28 @@ function BrowseMarkerRail({
 }
 
 function PreviewColumn({ game, isAttract }: { game: GameRecord; isAttract: boolean }) {
+  const videoRef = useRef<HTMLVideoElement | null>(null);
   const [unavailableMediaPaths, setUnavailableMediaPaths] = useState<Set<string>>(
     () => new Set(),
   );
   const previewMedia = getPreviewMedia(game, unavailableMediaPaths);
+  const previewMediaPath = previewMedia.kind === "none" ? "" : previewMedia.path;
+  const previewMediaSrc = previewMedia.kind === "none" ? "" : previewMedia.src;
 
   useEffect(() => {
     setUnavailableMediaPaths(new Set());
   }, [game.machineName]);
+
+  useEffect(() => {
+    if (previewMedia.kind !== "video") return;
+
+    const video = videoRef.current;
+    if (!video) return;
+
+    video.muted = true;
+    video.load();
+    startPreviewVideo(video);
+  }, [previewMedia.kind, previewMediaPath, previewMediaSrc]);
 
   function markPreviewMediaUnavailable(path: string) {
     setUnavailableMediaPaths((current) => {
@@ -1265,13 +1279,16 @@ function PreviewColumn({ game, isAttract }: { game: GameRecord; isAttract: boole
         {previewMedia.kind === "video" && (
           <video
             key={previewMedia.path}
+            ref={videoRef}
             className="absolute inset-0 h-full w-full bg-black object-contain"
             src={previewMedia.src}
             autoPlay
             muted
             loop
             playsInline
-            preload="metadata"
+            preload="auto"
+            onCanPlay={(event) => startPreviewVideo(event.currentTarget)}
+            onLoadedData={(event) => startPreviewVideo(event.currentTarget)}
             onError={() => markPreviewMediaUnavailable(previewMedia.path)}
           />
         )}
@@ -1353,6 +1370,13 @@ function PreviewColumn({ game, isAttract }: { game: GameRecord; isAttract: boole
       </div>
     </div>
   );
+}
+
+function startPreviewVideo(video: HTMLVideoElement) {
+  const playAttempt = video.play();
+  if (playAttempt) {
+    void playAttempt.catch(() => undefined);
+  }
 }
 
 function Dot() {
