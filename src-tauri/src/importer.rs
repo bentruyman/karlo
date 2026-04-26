@@ -80,8 +80,8 @@ pub fn parse_mame_listxml(xml: &str) -> Result<Vec<ImportedMachine>, String> {
             }
 
             if line.starts_with("<year>") {
-                current_machine.year = extract_tag_text(line, "year")
-                    .and_then(|value| value.parse::<u16>().ok());
+                current_machine.year =
+                    extract_tag_text(line, "year").and_then(|value| value.parse::<u16>().ok());
                 continue;
             }
 
@@ -91,7 +91,10 @@ pub fn parse_mame_listxml(xml: &str) -> Result<Vec<ImportedMachine>, String> {
             }
 
             if line.starts_with("</machine>") {
-                if current_machine.runnable && !current_machine.is_device && !current_machine.is_bios {
+                if current_machine.runnable
+                    && !current_machine.is_device
+                    && !current_machine.is_bios
+                {
                     machines.push(ImportedMachine {
                         machine_name: current_machine.machine_name.clone(),
                         title: current_machine

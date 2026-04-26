@@ -29,7 +29,9 @@ mod tests {
 
         assert!(catalog.len() > 30);
         assert_eq!(catalog[0].machine_name, "1942");
-        assert!(catalog.iter().any(|record| record.is_favorite == Some(true)));
+        assert!(catalog
+            .iter()
+            .any(|record| record.is_favorite == Some(true)));
         assert!(catalog
             .iter()
             .any(|record| record.was_recently_played == Some(true)));

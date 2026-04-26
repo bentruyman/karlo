@@ -18,7 +18,10 @@ pub struct AppState {
 
 impl AppState {
     pub fn initialize<R: Runtime, M: Manager<R>>(manager: &M) -> Result<Self, String> {
-        let data_dir = manager.path().app_data_dir().map_err(|error| error.to_string())?;
+        let data_dir = manager
+            .path()
+            .app_data_dir()
+            .map_err(|error| error.to_string())?;
         fs::create_dir_all(&data_dir).map_err(|error| error.to_string())?;
 
         let state = Self {
@@ -82,9 +85,14 @@ impl AppState {
         })
     }
 
-    pub fn save_cabinet_config(&self, cabinet_config: &contract::CabinetConfig) -> Result<(), String> {
+    pub fn save_cabinet_config(
+        &self,
+        cabinet_config: &contract::CabinetConfig,
+    ) -> Result<(), String> {
         let mut connection = self.open_connection()?;
-        let transaction = connection.transaction().map_err(|error| error.to_string())?;
+        let transaction = connection
+            .transaction()
+            .map_err(|error| error.to_string())?;
 
         for (key, value) in settings_pairs(cabinet_config)? {
             transaction
@@ -110,9 +118,14 @@ impl AppState {
         })
     }
 
-    pub fn toggle_game_favorite(&self, machine_name: &str) -> Result<contract::LibrarySnapshot, String> {
+    pub fn toggle_game_favorite(
+        &self,
+        machine_name: &str,
+    ) -> Result<contract::LibrarySnapshot, String> {
         let mut connection = self.open_connection()?;
-        let transaction = connection.transaction().map_err(|error| error.to_string())?;
+        let transaction = connection
+            .transaction()
+            .map_err(|error| error.to_string())?;
         let game_id = lookup_game_id(&transaction, machine_name)?;
         let current_favorite = transaction
             .query_row(
@@ -142,9 +155,14 @@ impl AppState {
         self.load_library_snapshot()
     }
 
-    pub fn record_recent_game(&self, machine_name: &str) -> Result<contract::LibrarySnapshot, String> {
+    pub fn record_recent_game(
+        &self,
+        machine_name: &str,
+    ) -> Result<contract::LibrarySnapshot, String> {
         let mut connection = self.open_connection()?;
-        let transaction = connection.transaction().map_err(|error| error.to_string())?;
+        let transaction = connection
+            .transaction()
+            .map_err(|error| error.to_string())?;
         let game_id = lookup_game_id(&transaction, machine_name)?;
 
         transaction
@@ -165,7 +183,9 @@ impl AppState {
         let imported_machines =
             importer::import_mame_catalog(&cabinet_config.paths.mame_executable_path)?;
         let mut connection = self.open_connection()?;
-        let transaction = connection.transaction().map_err(|error| error.to_string())?;
+        let transaction = connection
+            .transaction()
+            .map_err(|error| error.to_string())?;
         let existing_games = self.load_existing_game_state(&transaction)?;
 
         for machine in &imported_machines {
@@ -237,7 +257,9 @@ impl AppState {
         let discovered_machine_names = importer::scan_rom_roots(&cabinet_config.paths.rom_roots)?;
         let media_roots = MediaRootCandidates::from_paths(&cabinet_config.paths);
         let mut connection = self.open_connection()?;
-        let transaction = connection.transaction().map_err(|error| error.to_string())?;
+        let transaction = connection
+            .transaction()
+            .map_err(|error| error.to_string())?;
 
         let game_rows = load_game_rows(&transaction)?;
         for row in &game_rows {
@@ -318,7 +340,9 @@ impl AppState {
         }
 
         let catalog = seed::mock_catalog()?;
-        let transaction = connection.transaction().map_err(|error| error.to_string())?;
+        let transaction = connection
+            .transaction()
+            .map_err(|error| error.to_string())?;
         let mut recent_index = 0_u32;
 
         for (index, record) in catalog.iter().enumerate() {
@@ -390,12 +414,17 @@ impl AppState {
         transaction.commit().map_err(|error| error.to_string())
     }
 
-    fn load_settings_map(&self, connection: &Connection) -> Result<HashMap<String, String>, String> {
+    fn load_settings_map(
+        &self,
+        connection: &Connection,
+    ) -> Result<HashMap<String, String>, String> {
         let mut statement = connection
             .prepare("SELECT key, value FROM settings")
             .map_err(|error| error.to_string())?;
         let rows = statement
-            .query_map([], |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?)))
+            .query_map([], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+            })
             .map_err(|error| error.to_string())?;
 
         let mut settings = HashMap::new();
@@ -587,7 +616,9 @@ impl AppState {
     }
 }
 
-fn settings_pairs(cabinet_config: &contract::CabinetConfig) -> Result<Vec<(String, String)>, String> {
+fn settings_pairs(
+    cabinet_config: &contract::CabinetConfig,
+) -> Result<Vec<(String, String)>, String> {
     Ok(vec![
         (
             "mame_executable_path".to_owned(),
@@ -603,7 +634,8 @@ fn settings_pairs(cabinet_config: &contract::CabinetConfig) -> Result<Vec<(Strin
         ),
         (
             "rom_roots_json".to_owned(),
-            serde_json::to_string(&cabinet_config.paths.rom_roots).map_err(|error| error.to_string())?,
+            serde_json::to_string(&cabinet_config.paths.rom_roots)
+                .map_err(|error| error.to_string())?,
         ),
         (
             "media_roots_json".to_owned(),
@@ -630,7 +662,11 @@ fn settings_pairs(cabinet_config: &contract::CabinetConfig) -> Result<Vec<(Strin
     ])
 }
 
-fn setting_or_default(settings: &HashMap<String, String>, key: &str, default_value: String) -> String {
+fn setting_or_default(
+    settings: &HashMap<String, String>,
+    key: &str,
+    default_value: String,
+) -> String {
     settings
         .get(key)
         .and_then(|value| non_empty_string(value))
@@ -932,8 +968,14 @@ mod tests {
 
         assert!(snapshot.imported_games.len() > 30);
         assert_eq!(snapshot.imported_games[0].machine_name, "1942");
-        assert!(snapshot.library_entries.iter().any(|entry| entry.is_favorite));
-        assert!(snapshot.recent_games.iter().any(|entry| entry.machine_name == "pacman"));
+        assert!(snapshot
+            .library_entries
+            .iter()
+            .any(|entry| entry.is_favorite));
+        assert!(snapshot
+            .recent_games
+            .iter()
+            .any(|entry| entry.machine_name == "pacman"));
 
         let _ = fs::remove_file(path);
     }
