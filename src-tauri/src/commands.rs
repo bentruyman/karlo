@@ -1,7 +1,7 @@
 use serde::Serialize;
-use tauri::State;
+use tauri::{AppHandle, Manager, State, WebviewWindow};
 
-use crate::{contract, db, store};
+use crate::{contract, db, launcher, store};
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -65,6 +65,43 @@ pub fn record_recent_game(
 }
 
 #[tauri::command]
+pub async fn launch_mame_game(
+    machine_name: String,
+    app: AppHandle,
+    state: State<'_, store::AppState>,
+) -> Result<contract::LibrarySnapshot, String> {
+    let machine_name = machine_name.trim().to_owned();
+    let cabinet_config = state.load_cabinet_config()?;
+    let launch = launcher::build_mame_launch(&cabinet_config, &machine_name)?;
+    let main_window = app.get_webview_window("main");
+
+    if let Some(window) = &main_window {
+        window
+            .hide()
+            .map_err(|error| format!("Could not hide Karlo before launch: {error}"))?;
+    }
+
+    let launch_result =
+        tauri::async_runtime::spawn_blocking(move || launcher::launch_and_wait(launch))
+            .await
+            .map_err(|error| format!("MAME launch task failed: {error}"))?;
+
+    let restore_result = restore_main_window(main_window);
+
+    if let Err(error) = launch_result {
+        if let Err(restore_error) = restore_result {
+            return Err(format!(
+                "{error} Also could not restore Karlo: {restore_error}"
+            ));
+        }
+        return Err(error);
+    }
+
+    restore_result?;
+    state.record_recent_game(&machine_name)
+}
+
+#[tauri::command]
 pub fn import_mame_catalog(
     state: State<'_, store::AppState>,
 ) -> Result<contract::LibraryMaintenanceResult, String> {
@@ -96,4 +133,17 @@ pub fn get_schema_overview() -> SchemaOverview {
             })
             .collect(),
     }
+}
+
+fn restore_main_window(window: Option<WebviewWindow>) -> Result<(), String> {
+    let Some(window) = window else {
+        return Ok(());
+    };
+
+    window
+        .show()
+        .map_err(|error| format!("Could not show Karlo after MAME exited: {error}"))?;
+    window
+        .set_focus()
+        .map_err(|error| format!("Could not focus Karlo after MAME exited: {error}"))
 }

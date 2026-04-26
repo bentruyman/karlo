@@ -18,10 +18,10 @@ import {
   DEFAULT_LIBRARY_SNAPSHOT,
   DEFAULT_FRONTEND_BOOTSTRAP,
   importMameCatalog,
+  launchMameGame,
   loadCabinetConfig,
   loadFrontendBootstrap,
   loadLibrarySnapshot,
-  recordRecentGame,
   saveCabinetConfig,
   scanRomRoots,
   toggleGameFavorite,
@@ -120,6 +120,7 @@ export default function App() {
   );
   const [settingsStatus, setSettingsStatus] =
     useState<ServiceMenuStatus>("idle");
+  const [launchStatus, setLaunchStatus] = useState<LaunchStatus>("idle");
   const [viewIndex, setViewIndex] = useState(() =>
     Math.max(
       DEFAULT_FRONTEND_BOOTSTRAP.curation.browseViews.findIndex(
@@ -209,6 +210,7 @@ export default function App() {
   function noteInteraction() {
     lastInteractionAtRef.current = Date.now();
     if (isAttractMode) setIsAttractMode(false);
+    if (launchStatus !== "launching") setLaunchStatus("idle");
   }
 
   function applyLibrarySnapshot(snapshot: LibrarySnapshot) {
@@ -373,13 +375,27 @@ export default function App() {
     } catch {}
   });
 
-  const recordSelectedGameAsRecent = useEffectEvent(async () => {
+  const launchSelectedGame = useEffectEvent(async () => {
     const gameId = selectedGame?.id;
-    if (!gameId) return;
+    if (!gameId || launchStatus === "launching") return;
+
+    setLaunchStatus("launching");
 
     try {
-      applyLibrarySnapshot(await recordRecentGame(gameId));
-    } catch {}
+      applyLibrarySnapshot(await launchMameGame(gameId));
+      setLaunchStatus("idle");
+      noteInteraction();
+    } catch (error) {
+      setLaunchStatus({
+        kind: "error",
+        message:
+          error instanceof Error
+            ? error.message
+            : typeof error === "string"
+              ? error
+            : "Could not launch the selected game.",
+      });
+    }
   });
 
   const openSettings = useEffectEvent(async () => {
@@ -730,7 +746,7 @@ export default function App() {
           setBrowseFocusZone("gameList");
           return;
         }
-        void recordSelectedGameAsRecent();
+        void launchSelectedGame();
         return;
       case "x":
         event.preventDefault();
@@ -832,7 +848,7 @@ export default function App() {
             <PreviewColumn game={selectedGame} isAttract={isAttractMode} />
           </div>
 
-          <ControlHints />
+          <ControlHints launchStatus={launchStatus} />
         </div>
 
         {isSettingsOpen && (
@@ -891,6 +907,11 @@ type ServiceMenuStatus =
   | "idle"
   | "saving"
   | { kind: "saved"; message: string }
+  | { kind: "error"; message: string };
+
+type LaunchStatus =
+  | "idle"
+  | "launching"
   | { kind: "error"; message: string };
 
 function getStatusBadge(status: ServiceMenuStatus) {
@@ -1409,7 +1430,7 @@ function Badge({
   );
 }
 
-function ControlHints() {
+function ControlHints({ launchStatus }: { launchStatus: LaunchStatus }) {
   const hints: Array<[string, string]> = [
     ["▴▾", "SELECT"],
     ["◂▸", "LETTER"],
@@ -1419,19 +1440,38 @@ function ControlHints() {
     ["↩", "BACK"],
   ];
   return (
-    <div
-      className="flex items-center justify-between font-display tracking-[0.18em] text-cab-mute border-t-[0.4cqh] border-cab-rule pt-[1.2cqh]"
-      style={{ fontSize: "2cqh" }}
-    >
-      {hints.map(([glyph, label], i) => (
-        <span key={label} className="flex items-center gap-[0.7cqw]">
-          <span className="text-cab-ink" style={{ fontSize: "2.6cqh" }}>{glyph}</span>
-          <span>{label}</span>
-          {i < hints.length - 1 && (
-            <span aria-hidden className="ml-[0.7cqw] text-cab-rule">│</span>
-          )}
-        </span>
-      ))}
+    <div className="border-t-[0.4cqh] border-cab-rule pt-[1.2cqh]">
+      {launchStatus !== "idle" && (
+        <div
+          className="mb-[0.8cqh] font-display tracking-[0.16em]"
+          style={{
+            fontSize: "1.8cqh",
+            color:
+              launchStatus === "launching"
+                ? "var(--color-cab-accent)"
+                : "var(--color-cab-danger)",
+          }}
+        >
+          {launchStatus === "launching"
+            ? "LAUNCHING MAME"
+            : launchStatus.message}
+        </div>
+      )}
+
+      <div
+        className="flex items-center justify-between font-display tracking-[0.18em] text-cab-mute"
+        style={{ fontSize: "2cqh" }}
+      >
+        {hints.map(([glyph, label], i) => (
+          <span key={label} className="flex items-center gap-[0.7cqw]">
+            <span className="text-cab-ink" style={{ fontSize: "2.6cqh" }}>{glyph}</span>
+            <span>{label}</span>
+            {i < hints.length - 1 && (
+              <span aria-hidden className="ml-[0.7cqw] text-cab-rule">│</span>
+            )}
+          </span>
+        ))}
+      </div>
     </div>
   );
 }

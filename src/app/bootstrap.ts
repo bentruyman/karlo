@@ -176,6 +176,12 @@ export async function recordRecentGame(
   return await invoke<LibrarySnapshot>("record_recent_game", { machineName });
 }
 
+export async function launchMameGame(
+  machineName: string,
+): Promise<LibrarySnapshot> {
+  return await invoke<LibrarySnapshot>("launch_mame_game", { machineName });
+}
+
 export async function importMameCatalog(): Promise<LibraryMaintenanceResult> {
   return await invoke<LibraryMaintenanceResult>("import_mame_catalog");
 }

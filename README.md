@@ -46,6 +46,13 @@ The active app lives in:
 - `src/`
 - `src-tauri/`
 
+### MAME Launching
+
+Use the hidden service menu to set the MAME executable path before launching
+games. The optional `mame.ini` path is used as MAME's `-inipath` directory.
+Press the launch control on a selected game to hide Karlo, run MAME for that
+machine, then return to the same frontend state when MAME exits.
+
 ### Repo Shape
 
 - `docs/` for planning and project notes
