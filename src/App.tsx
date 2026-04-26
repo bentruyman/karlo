@@ -1347,11 +1347,6 @@ function PreviewColumn({ game, isAttract }: { game: GameRecord; isAttract: boole
         />
 
         <div className="absolute inset-[3%] flex flex-col justify-between pointer-events-none">
-          <div className="flex items-start justify-between font-display tracking-[0.25em] text-cab-mute" style={{ fontSize: "1.9cqh", textShadow: "0 0.25cqh 0.8cqh #000" }}>
-            <span>PREVIEW</span>
-            <span>{game.machineName.toUpperCase()}</span>
-          </div>
-
           {game.attractCaption && previewMedia.kind === "none" && (
             <p
               className="font-sans leading-[1.2] text-cab-ink max-w-[80%]"
