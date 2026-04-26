@@ -135,6 +135,11 @@ pub fn get_schema_overview() -> SchemaOverview {
     }
 }
 
+#[tauri::command]
+pub fn report_frontend_diagnostic(event: String, details: String) {
+    eprintln!("[karlo] frontend diagnostic: {event} {details}");
+}
+
 fn restore_main_window(window: Option<WebviewWindow>) -> Result<(), String> {
     let Some(window) = window else {
         return Ok(());

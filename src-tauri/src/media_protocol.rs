@@ -4,12 +4,20 @@ use std::path::PathBuf;
 
 use tauri::http::{header, Request, Response, StatusCode};
 
-pub fn handle_media_request(request: Request<Vec<u8>>) -> Response<Vec<u8>> {
+use crate::contract;
+
+const MAX_RANGE_RESPONSE_LEN: u64 = 1_000 * 1024;
+
+pub fn handle_media_request(
+    request: Request<Vec<u8>>,
+    configured_roots: &[PathBuf],
+) -> Response<Vec<u8>> {
+    let method = request.method().clone();
     let Some(path) = request_path(request.uri().path()) else {
         return text_response(StatusCode::BAD_REQUEST, "invalid media path");
     };
 
-    if !is_allowed_media_path(&path) {
+    if !is_allowed_media_path(&path, configured_roots) {
         return text_response(
             StatusCode::FORBIDDEN,
             "media path is outside the allowed roots",
@@ -22,7 +30,19 @@ pub fn handle_media_request(request: Request<Vec<u8>>) -> Response<Vec<u8>> {
         .and_then(|value| value.to_str().ok())
         .and_then(|value| parse_byte_range(value));
 
-    file_response(&path, range)
+    file_response(&path, method == tauri::http::Method::HEAD, range)
+}
+
+pub fn configured_media_roots(paths: &contract::CabinetPaths) -> Vec<PathBuf> {
+    let mut roots = Vec::new();
+
+    for root in &paths.media_roots {
+        push_non_empty_root(&mut roots, root);
+    }
+    push_non_empty_root(&mut roots, &paths.preview_video_root);
+    push_non_empty_root(&mut roots, &paths.artwork_root);
+
+    roots
 }
 
 fn request_path(uri_path: &str) -> Option<PathBuf> {
@@ -34,24 +54,30 @@ fn request_path(uri_path: &str) -> Option<PathBuf> {
     }
 }
 
-fn is_allowed_media_path(path: &PathBuf) -> bool {
+fn is_allowed_media_path(path: &PathBuf, configured_roots: &[PathBuf]) -> bool {
     let Ok(path) = path.canonicalize() else {
         return false;
     };
 
-    allowed_media_roots()
+    allowed_media_roots(configured_roots)
         .into_iter()
         .filter_map(|root| root.canonicalize().ok())
         .any(|root| path.starts_with(root))
 }
 
-fn allowed_media_roots() -> Vec<PathBuf> {
+fn allowed_media_roots(configured_roots: &[PathBuf]) -> Vec<PathBuf> {
     let mut roots = vec![PathBuf::from("/srv/karlo/library")];
 
     if let Some(home) = std::env::var_os("HOME") {
         let home = PathBuf::from(home);
         roots.push(home.join("Development/src/github.com/bentruyman/karlo-library"));
         roots.push(home.join("Downloads"));
+    }
+
+    for root in configured_roots {
+        if !roots.iter().any(|existing| existing == root) {
+            roots.push(root.clone());
+        }
     }
 
     roots
@@ -67,11 +93,29 @@ fn content_type_for(path: &PathBuf) -> &'static str {
         Some("mp4") => "video/mp4",
         Some("webm") => "video/webm",
         Some("mov") => "video/quicktime",
+        Some("png") => "image/png",
+        Some("jpg") | Some("jpeg") => "image/jpeg",
         _ => "application/octet-stream",
     }
 }
 
-fn file_response(path: &PathBuf, requested_range: Option<RequestedRange>) -> Response<Vec<u8>> {
+fn push_non_empty_root(roots: &mut Vec<PathBuf>, root: &str) {
+    let root = root.trim();
+    if root.is_empty() {
+        return;
+    }
+
+    let root = PathBuf::from(root);
+    if !roots.iter().any(|existing| existing == &root) {
+        roots.push(root);
+    }
+}
+
+fn file_response(
+    path: &PathBuf,
+    is_head_request: bool,
+    requested_range: Option<RequestedRange>,
+) -> Response<Vec<u8>> {
     let Ok(mut file) = File::open(path) else {
         return text_response(StatusCode::NOT_FOUND, "media file could not be read");
     };
@@ -84,6 +128,18 @@ fn file_response(path: &PathBuf, requested_range: Option<RequestedRange>) -> Res
     };
     let file_len = metadata.len();
 
+    if is_head_request {
+        return Response::builder()
+            .header(header::CONTENT_TYPE, content_type_for(path))
+            .header(header::CONTENT_LENGTH, file_len.to_string())
+            .header(header::ACCEPT_RANGES, "bytes")
+            .header(header::ACCESS_CONTROL_ALLOW_ORIGIN, "*")
+            .body(Vec::new())
+            .unwrap_or_else(|_| {
+                text_response(StatusCode::INTERNAL_SERVER_ERROR, "media response failed")
+            });
+    }
+
     if let Some(requested_range) = requested_range {
         let Some(range) = requested_range.resolve(file_len) else {
             return Response::builder()
@@ -93,6 +149,7 @@ fn file_response(path: &PathBuf, requested_range: Option<RequestedRange>) -> Res
                 .body(Vec::new())
                 .unwrap_or_else(|_| range_error_response());
         };
+        let range = range.with_max_len(MAX_RANGE_RESPONSE_LEN);
 
         return match read_file_range(&mut file, range.start, range.len()) {
             Ok(data) => Response::builder()
@@ -100,6 +157,7 @@ fn file_response(path: &PathBuf, requested_range: Option<RequestedRange>) -> Res
                 .header(header::CONTENT_TYPE, content_type_for(path))
                 .header(header::CONTENT_LENGTH, data.len().to_string())
                 .header(header::ACCEPT_RANGES, "bytes")
+                .header(header::ACCESS_CONTROL_EXPOSE_HEADERS, "content-range")
                 .header(
                     header::CONTENT_RANGE,
                     format!("bytes {}-{}/{}", range.start, range.end, file_len),
@@ -157,6 +215,17 @@ struct ResolvedRange {
 impl ResolvedRange {
     fn len(self) -> u64 {
         self.end - self.start + 1
+    }
+
+    fn with_max_len(self, max_len: u64) -> Self {
+        if max_len == 0 || self.len() <= max_len {
+            self
+        } else {
+            Self {
+                start: self.start,
+                end: self.start + max_len - 1,
+            }
+        }
     }
 }
 
@@ -287,9 +356,40 @@ mod tests {
             content_type_for(&PathBuf::from("preview.webm")),
             "video/webm"
         );
+        assert_eq!(content_type_for(&PathBuf::from("preview.png")), "image/png");
+        assert_eq!(
+            content_type_for(&PathBuf::from("preview.jpeg")),
+            "image/jpeg"
+        );
         assert_eq!(
             content_type_for(&PathBuf::from("preview.bin")),
             "application/octet-stream"
+        );
+    }
+
+    #[test]
+    fn configured_media_roots_include_all_cabinet_media_paths() {
+        let paths = contract::CabinetPaths {
+            mame_executable_path: String::new(),
+            mame_ini_path: None,
+            rom_roots: vec![],
+            media_roots: vec![
+                "/media/cabinet".to_owned(),
+                " ".to_owned(),
+                "/media/cabinet".to_owned(),
+            ],
+            preview_video_root: "/mnt/videos".to_owned(),
+            artwork_root: "/mnt/artwork".to_owned(),
+            category_ini_path: None,
+        };
+
+        assert_eq!(
+            configured_media_roots(&paths),
+            vec![
+                PathBuf::from("/media/cabinet"),
+                PathBuf::from("/mnt/videos"),
+                PathBuf::from("/mnt/artwork"),
+            ]
         );
     }
 
@@ -352,6 +452,30 @@ mod tests {
             }
             .resolve(10),
             None
+        );
+    }
+
+    #[test]
+    fn resolved_range_caps_open_ended_video_reads() {
+        assert_eq!(
+            RequestedRange {
+                start: Some(0),
+                end: None,
+            }
+            .resolve(10_000)
+            .map(|range| range.with_max_len(1_024)),
+            Some(ResolvedRange {
+                start: 0,
+                end: 1_023,
+            })
+        );
+    }
+
+    #[test]
+    fn resolved_range_keeps_small_reads_unchanged() {
+        assert_eq!(
+            ResolvedRange { start: 4, end: 11 }.with_max_len(1_024),
+            ResolvedRange { start: 4, end: 11 }
         );
     }
 }

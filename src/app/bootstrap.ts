@@ -196,3 +196,17 @@ export async function importMameCatalog(): Promise<LibraryMaintenanceResult> {
 export async function scanRomRoots(): Promise<LibraryMaintenanceResult> {
   return await invoke<LibraryMaintenanceResult>("scan_rom_roots");
 }
+
+export async function reportFrontendDiagnostic(
+  event: string,
+  details: Record<string, unknown>,
+): Promise<void> {
+  try {
+    await invoke("report_frontend_diagnostic", {
+      event,
+      details: JSON.stringify(details),
+    });
+  } catch {
+    // Diagnostics must never interrupt cabinet browsing.
+  }
+}

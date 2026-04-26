@@ -109,6 +109,7 @@ KARLO_RESTART="${KARLO_RESTART:-1}"
 KARLO_APP_BINARY="${KARLO_APP_BINARY:-/usr/bin/karlo}"
 KARLO_SESSION_BACKEND="${KARLO_SESSION_BACKEND:-x11}"
 KARLO_WESTON_SHELL="${KARLO_WESTON_SHELL:-desktop}"
+KARLO_WEBKIT_DISABLE_COMPOSITING="${KARLO_WEBKIT_DISABLE_COMPOSITING:-0}"
 
 [[ -n "${KARLO_GITHUB_REPO}" ]] || die "set KARLO_GITHUB_REPO or use a GitHub origin remote"
 [[ -n "${KARLO_GITHUB_REF}" ]] || die "set KARLO_GITHUB_REF or run from a branch"
@@ -162,7 +163,7 @@ ssh_remote_tty "sudo systemctl stop karlo-session.service >/dev/null 2>&1 || tru
 ssh_remote_tty "sudo apt-get install -y $(shell_quote "${REMOTE_DEB}")"
 
 if [[ "${KARLO_PROVISION}" == "1" ]]; then
-  ssh_remote_tty "sudo env KARLO_CABINET_USER=$(shell_quote "${KARLO_CABINET_USER}") KARLO_APP_BINARY=$(shell_quote "${KARLO_APP_BINARY}") KARLO_OPTIMIZE_BOOT=$(shell_quote "${KARLO_OPTIMIZE_BOOT}") KARLO_SESSION_BACKEND=$(shell_quote "${KARLO_SESSION_BACKEND}") KARLO_WESTON_SHELL=$(shell_quote "${KARLO_WESTON_SHELL}") bash $(shell_quote "${REMOTE_PROVISION}")"
+  ssh_remote_tty "sudo env KARLO_CABINET_USER=$(shell_quote "${KARLO_CABINET_USER}") KARLO_APP_BINARY=$(shell_quote "${KARLO_APP_BINARY}") KARLO_OPTIMIZE_BOOT=$(shell_quote "${KARLO_OPTIMIZE_BOOT}") KARLO_SESSION_BACKEND=$(shell_quote "${KARLO_SESSION_BACKEND}") KARLO_WESTON_SHELL=$(shell_quote "${KARLO_WESTON_SHELL}") KARLO_WEBKIT_DISABLE_COMPOSITING=$(shell_quote "${KARLO_WEBKIT_DISABLE_COMPOSITING}") bash $(shell_quote "${REMOTE_PROVISION}")"
   if [[ "${KARLO_PASSWORDLESS_SUDO}" == "1" ]]; then
     ssh_remote_tty "sudo install -d -m 0750 /etc/sudoers.d && echo $(shell_quote "${KARLO_CABINET_SSH_USER} ALL=(ALL) NOPASSWD:ALL") | sudo tee /etc/sudoers.d/90-karlo-deploy >/dev/null && sudo chmod 0440 /etc/sudoers.d/90-karlo-deploy && sudo visudo -cf /etc/sudoers.d/90-karlo-deploy"
   fi
