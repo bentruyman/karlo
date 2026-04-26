@@ -54,8 +54,9 @@ The active app lives in:
 
 ## Cabinet Deployment
 
-The repo can build a Linux desktop artifact in GitHub Actions and deploy it to
-an Ubuntu/Debian x64 cabinet over SSH.
+The repo runs lightweight Bun CI on `develop` and release packaging on `main`.
+Pushes to `main` build the Linux desktop artifact in GitHub Actions, which can
+then be deployed to an Ubuntu/Debian x64 cabinet over SSH.
 
 One-time local setup:
 
@@ -70,9 +71,14 @@ Deploy the current pushed commit:
 bun run deploy:cabinet
 ```
 
-The deploy command expects `HEAD` to be pushed to `KARLO_GITHUB_REF`, triggers
-or reuses the matching `linux-artifact.yml` workflow, downloads the `.deb`,
-installs it on the cabinet, and restarts `karlo-session.service`.
+The deploy command expects `HEAD` to be pushed to `KARLO_GITHUB_REF`, reuses a
+successful `linux-artifact.yml` run for that commit when one exists, or triggers
+the workflow manually for that exact SHA. It downloads the `.deb`, installs it
+on the cabinet, and restarts `karlo-session.service`.
+
+By default `KARLO_GITHUB_REF` should point at `main` for release deployments.
+Set it to another pushed branch, such as `develop`, only when you intentionally
+want a manual non-release cabinet build.
 
 Provisioning is enabled by default. It installs the cabinet runtime packages,
 creates the dedicated `karlo` user if needed, installs a systemd service that
