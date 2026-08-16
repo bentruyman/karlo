@@ -18,9 +18,7 @@
 
 @theme {
   --font-sans: "FairSans", "Helvetica Neue", Arial, sans-serif;
-  --font-display: "FairSans", "Helvetica Neue", Arial, sans-serif;
 
-  --color-cab-bg: #000000;
   --color-cab-ink: #f4f6fb;
   --color-cab-mute: #8a94a8;
   --color-cab-dim: #3f4755;
@@ -58,7 +56,6 @@ button {
 }
 
 .font-display {
-  font-family: var(--font-display);
   font-weight: 700;
   letter-spacing: 0.02em;
   text-transform: uppercase;

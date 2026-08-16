@@ -15,12 +15,10 @@ describe("service navigation metadata", () => {
       "launch",
       "media",
       "display",
-      "storage",
     ]);
     expect(getServiceSectionIndex("display")).toBe(2);
     expect(getServicePanelActions("launch")).toEqual([]);
     expect(getServicePanelActions("media")).toEqual(["scanRoms"]);
-    expect(getServiceFieldKeys("storage")).toEqual([]);
     expect(getServicePanelActions("display")).toEqual(["openCalibration"]);
   });
 });
@@ -42,15 +40,6 @@ describe("moveServiceFocus", () => {
     ).toEqual({
       zone: "field",
       key: "romRootsText",
-    });
-  });
-
-  test("falls through to footer actions when a section has no editable fields", () => {
-    expect(
-      moveServiceFocus({ zone: "sections", index: 3 }, "right", "storage"),
-    ).toEqual({
-      zone: "actions",
-      action: "defaults",
     });
   });
 
@@ -91,13 +80,6 @@ describe("moveServiceFocus", () => {
     ).toEqual({
       zone: "field",
       key: "mameIniPath",
-    });
-
-    expect(
-      moveServiceFocus({ zone: "actions", action: "defaults" }, "left", "storage"),
-    ).toEqual({
-      zone: "sections",
-      index: 3,
     });
 
     expect(

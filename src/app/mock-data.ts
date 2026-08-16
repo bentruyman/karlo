@@ -11,7 +11,7 @@ type MockCatalogSeed = {
   year: number;
   manufacturer: string;
   genre: string;
-  attractCaption?: string;
+  hasMedia?: boolean;
   isFavorite?: boolean;
   wasRecentlyPlayed?: boolean;
 };
@@ -25,13 +25,12 @@ export const mockImportedGames: ImportedGameRecord[] = rawCatalog.map((game) => 
   manufacturer: game.manufacturer,
   genre: game.genre,
   romAvailable: true,
-  videoPath: game.attractCaption
+  videoPath: game.hasMedia
     ? `media/previews/${game.machineName}.mp4`
     : undefined,
-  artworkPaths: game.attractCaption
+  artworkPaths: game.hasMedia
     ? [`media/artwork/${game.machineName}.png`]
     : [],
-  attractCaption: game.attractCaption,
 }));
 
 export const mockLibraryEntries: LibraryEntryRecord[] = rawCatalog.map(
@@ -49,9 +48,5 @@ export const mockRecentGames: RecentGameRecord[] = rawCatalog
   .filter((game) => game.wasRecentlyPlayed)
   .map((game, index) => ({
     machineName: game.machineName,
-    lastPlayedAt: seedRecentTimestamp(index),
+    lastPlayedAt: String(1776470400 + index),
   }));
-
-function seedRecentTimestamp(index: number) {
-  return String(1776470400 + index);
-}

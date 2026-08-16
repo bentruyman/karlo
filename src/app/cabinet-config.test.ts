@@ -104,19 +104,6 @@ describe("parseCabinetConfigDraft", () => {
     });
   });
 
-  test("rejects a blank MAME executable path when importing catalog metadata", () => {
-    expect(
-      parseCabinetConfigDraft(
-        { ...cabinetConfigToDraft(baseConfig), mameExecutablePath: "   " },
-        baseConfig,
-        { requireMameExecutablePath: true },
-      ),
-    ).toEqual({
-      ok: false,
-      message: "MAME executable path is required.",
-    });
-  });
-
   test("allows empty library roots for partial settings saves", () => {
     expect(
       parseCabinetConfigDraft(

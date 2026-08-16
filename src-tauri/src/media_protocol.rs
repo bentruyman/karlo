@@ -2,31 +2,11 @@ use std::fs::{self, File};
 use std::io::{Read, Seek, SeekFrom};
 use std::path::PathBuf;
 
-use tauri::http::{header, Request, Response, StatusCode};
+use tauri::http::{header, Response, StatusCode};
 
 use crate::contract;
 
 const MAX_RANGE_RESPONSE_LEN: u64 = 1_000 * 1024;
-
-pub fn handle_media_request(
-    request: Request<Vec<u8>>,
-    configured_roots: &[PathBuf],
-) -> Response<Vec<u8>> {
-    let method = request.method().clone();
-    let Some(path) = request_path(request.uri().path()) else {
-        return text_response(StatusCode::BAD_REQUEST, "invalid media path");
-    };
-
-    media_response_for_path(
-        &path,
-        method == tauri::http::Method::HEAD,
-        request
-            .headers()
-            .get(header::RANGE)
-            .and_then(|value| value.to_str().ok()),
-        configured_roots,
-    )
-}
 
 pub fn media_response_for_path(
     path: &PathBuf,
@@ -58,42 +38,15 @@ pub fn configured_media_roots(paths: &contract::CabinetPaths) -> Vec<PathBuf> {
     roots
 }
 
-fn request_path(uri_path: &str) -> Option<PathBuf> {
-    let decoded = percent_decode(uri_path.strip_prefix('/')?);
-    if decoded.starts_with('/') {
-        Some(PathBuf::from(decoded))
-    } else {
-        None
-    }
-}
-
 fn is_allowed_media_path(path: &PathBuf, configured_roots: &[PathBuf]) -> bool {
     let Ok(path) = path.canonicalize() else {
         return false;
     };
 
-    allowed_media_roots(configured_roots)
-        .into_iter()
+    configured_roots
+        .iter()
         .filter_map(|root| root.canonicalize().ok())
         .any(|root| path.starts_with(root))
-}
-
-fn allowed_media_roots(configured_roots: &[PathBuf]) -> Vec<PathBuf> {
-    let mut roots = vec![PathBuf::from("/srv/karlo/library")];
-
-    if let Some(home) = std::env::var_os("HOME") {
-        let home = PathBuf::from(home);
-        roots.push(home.join("Development/src/github.com/bentruyman/karlo-library"));
-        roots.push(home.join("Downloads"));
-    }
-
-    for root in configured_roots {
-        if !roots.iter().any(|existing| existing == root) {
-            roots.push(root.clone());
-        }
-    }
-
-    roots
 }
 
 fn content_type_for(path: &PathBuf) -> &'static str {
@@ -308,59 +261,9 @@ fn range_error_response() -> Response<Vec<u8>> {
     )
 }
 
-fn percent_decode(value: &str) -> String {
-    let bytes = value.as_bytes();
-    let mut decoded = Vec::with_capacity(bytes.len());
-    let mut index = 0;
-
-    while index < bytes.len() {
-        if bytes[index] == b'%' && index + 2 < bytes.len() {
-            if let (Some(high), Some(low)) =
-                (hex_value(bytes[index + 1]), hex_value(bytes[index + 2]))
-            {
-                decoded.push((high << 4) | low);
-                index += 3;
-                continue;
-            }
-        }
-
-        decoded.push(bytes[index]);
-        index += 1;
-    }
-
-    String::from_utf8_lossy(&decoded).into_owned()
-}
-
-fn hex_value(byte: u8) -> Option<u8> {
-    match byte {
-        b'0'..=b'9' => Some(byte - b'0'),
-        b'a'..=b'f' => Some(byte - b'a' + 10),
-        b'A'..=b'F' => Some(byte - b'A' + 10),
-        _ => None,
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn request_path_decodes_absolute_paths() {
-        assert_eq!(
-            request_path("/%2Fsrv%2Fkarlo%2Flibrary%2Fmedia%2Fmame%2Fvideos%2F1942.mp4").unwrap(),
-            PathBuf::from("/srv/karlo/library/media/mame/videos/1942.mp4")
-        );
-        assert_eq!(
-            request_path("/%2FUsers%2Fben%2FKarlo%20Library%2Fvideo.mp4").unwrap(),
-            PathBuf::from("/Users/ben/Karlo Library/video.mp4")
-        );
-    }
-
-    #[test]
-    fn request_path_rejects_relative_or_missing_paths() {
-        assert!(request_path("/relative%2Fvideo.mp4").is_none());
-        assert!(request_path("relative/video.mp4").is_none());
-    }
 
     #[test]
     fn content_type_tracks_common_video_extensions() {

@@ -1,5 +1,3 @@
-import { convertFileSrc, isTauri } from "@tauri-apps/api/core";
-
 import type { GameRecord } from "./types";
 
 let mediaHttpBaseUrl: string | null = null;
@@ -21,7 +19,7 @@ export function getPreviewMedia(
     return {
       kind: "video",
       path: game.videoPath,
-      src: toVideoSrc(game.videoPath),
+      src: toMediaSrc(game.videoPath),
     };
   }
 
@@ -39,42 +37,16 @@ export function getPreviewMedia(
   return { kind: "none" };
 }
 
+/** Device media goes over the loopback server; packaged relative media stays as-is. */
 export function toMediaSrc(path: string) {
-  if (!isDeviceFilePath(path) || !isTauri()) return path;
-
-  try {
-    return convertFileSrc(path);
-  } catch {
-    return toKarloMediaSrc(path);
-  }
-}
-
-export function toVideoSrc(path: string) {
-  const httpSrc = toMediaHttpSrc(path);
-  if (httpSrc) return httpSrc;
-
-  if (!isDeviceFilePath(path) || !isTauri()) return path;
-
-  try {
-    return convertFileSrc(path);
-  } catch {
-    return toKarloMediaSrc(path);
-  }
-}
-
-function toKarloMediaSrc(path: string) {
-  return `karlo-media://localhost/${encodeURIComponent(path)}`;
-}
-
-function toMediaHttpSrc(path: string) {
-  if (!mediaHttpBaseUrl || !isDeviceFilePath(path)) return null;
+  if (!mediaHttpBaseUrl || !isDeviceFilePath(path)) return path;
 
   try {
     const url = new URL("/media", mediaHttpBaseUrl);
     url.searchParams.set("path", path);
     return url.toString();
   } catch {
-    return null;
+    return path;
   }
 }
 

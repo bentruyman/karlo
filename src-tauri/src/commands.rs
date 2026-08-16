@@ -1,22 +1,6 @@
-use serde::Serialize;
 use tauri::{AppHandle, Manager, State, WebviewWindow};
 
-use crate::{contract, db, launcher, media_server, store};
-
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct TableDefinition {
-    name: &'static str,
-    purpose: &'static str,
-}
-
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct SchemaOverview {
-    version: i64,
-    schema_sql: &'static str,
-    tables: Vec<TableDefinition>,
-}
+use crate::{contract, launcher, media_server, store};
 
 #[tauri::command]
 pub fn get_frontend_bootstrap(
@@ -61,14 +45,6 @@ pub fn toggle_game_favorite(
 }
 
 #[tauri::command]
-pub fn record_recent_game(
-    machine_name: String,
-    state: State<'_, store::AppState>,
-) -> Result<contract::LibrarySnapshot, String> {
-    state.record_recent_game(&machine_name)
-}
-
-#[tauri::command]
 pub async fn launch_mame_game(
     machine_name: String,
     app: AppHandle,
@@ -106,37 +82,10 @@ pub async fn launch_mame_game(
 }
 
 #[tauri::command]
-pub fn import_mame_catalog(
-    state: State<'_, store::AppState>,
-) -> Result<contract::LibraryMaintenanceResult, String> {
-    state.import_mame_catalog()
-}
-
-#[tauri::command]
 pub fn scan_rom_roots(
     state: State<'_, store::AppState>,
 ) -> Result<contract::LibraryMaintenanceResult, String> {
     state.scan_rom_roots()
-}
-
-#[tauri::command]
-pub fn get_runtime_contract() -> contract::RuntimeContract {
-    contract::runtime_contract()
-}
-
-#[tauri::command]
-pub fn get_schema_overview() -> SchemaOverview {
-    SchemaOverview {
-        version: db::SCHEMA_VERSION,
-        schema_sql: db::SCHEMA_SQL,
-        tables: db::TABLES
-            .iter()
-            .map(|table| TableDefinition {
-                name: table.name,
-                purpose: table.purpose,
-            })
-            .collect(),
-    }
 }
 
 #[tauri::command]

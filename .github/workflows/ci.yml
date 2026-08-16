@@ -37,3 +37,10 @@ jobs:
       - run: bun run build
       - run: cargo test --manifest-path src-tauri/Cargo.toml
       - run: bun run tauri:build -- --bundles appimage
+
+      # publish-arcade.yml downloads this instead of rebuilding it.
+      - uses: actions/upload-artifact@v4
+        with:
+          name: karlo-appimage
+          if-no-files-found: error
+          path: src-tauri/target/release/bundle/appimage/*.AppImage

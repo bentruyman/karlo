@@ -35,34 +35,6 @@ export interface CabinetConfig {
   displayCalibration: DisplayCalibration;
 }
 
-export type ConfigValueKind =
-  | "path"
-  | "optionalPath"
-  | "pathList"
-  | "seconds"
-  | "calibration";
-
-export interface ConfigKeyDefinition {
-  key: string;
-  purpose: string;
-  kind: ConfigValueKind;
-  required: boolean;
-}
-
-export interface SettingsContract {
-  table: string;
-  owner: string;
-  requiredKeys: ConfigKeyDefinition[];
-}
-
-export interface ImportedCatalogContract {
-  table: string;
-  identityField: string;
-  romAvailabilityField: string;
-  mediaFields: string[];
-  curationBoundary: string;
-}
-
 export interface GameRecord {
   id: string;
   title: string;
@@ -73,7 +45,6 @@ export interface GameRecord {
   romAvailable: boolean;
   videoPath?: string;
   artworkPaths: string[];
-  attractCaption?: string;
   isFavorite: boolean;
   wasRecentlyPlayed: boolean;
 }
@@ -87,7 +58,6 @@ export interface ImportedGameRecord {
   romAvailable: boolean;
   videoPath?: string;
   artworkPaths: string[];
-  attractCaption?: string;
 }
 
 export interface LibraryEntryRecord {
@@ -104,25 +74,9 @@ export interface RecentGameRecord {
   lastPlayedAt: string;
 }
 
-export interface CurationContract {
-  importedCatalogTable: string;
-  curatedLibraryTable: string;
-  recentHistoryTable: string;
-  visibleLibraryRule: string;
-  favoritesFallbackRule: string;
-  browseViews: BrowseView[];
-}
-
-export interface RuntimeContract {
-  settings: SettingsContract;
-  importedCatalog: ImportedCatalogContract;
-  curation: CurationContract;
-}
-
 export interface FrontendBootstrap {
   defaultView: BrowseViewId;
   cabinetConfig: CabinetConfig;
-  curation: CurationContract;
   mediaHttpBaseUrl: string | null;
 }
 

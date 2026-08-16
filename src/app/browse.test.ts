@@ -8,7 +8,7 @@ import {
   getGamesForView,
   jumpBrowseGroup,
 } from "./library";
-import { getTitleBucket, jumpLetter, wrapIndex } from "./browse";
+import { getTitleBucket, wrapIndex } from "./browse";
 import type {
   GameRecord,
   ImportedGameRecord,
@@ -471,23 +471,6 @@ describe("wrapIndex", () => {
   test("wraps in both directions", () => {
     expect(wrapIndex(-1, 6)).toBe(5);
     expect(wrapIndex(6, 6)).toBe(0);
-  });
-});
-
-describe("jumpLetter", () => {
-  test("skips within the current bucket and advances to the next one", () => {
-    expect(jumpLetter(jumpGames, 1, 1)).toBe(3);
-    expect(jumpLetter(jumpGames, 4, -1)).toBe(1);
-  });
-
-  test("wraps around in both directions", () => {
-    expect(jumpLetter(jumpGames, 5, 1)).toBe(0);
-    expect(jumpLetter(jumpGames, 0, -1)).toBe(5);
-  });
-
-  test("lands on the top of the previous bucket when moving backward", () => {
-    expect(jumpLetter(jumpGames, 3, -1)).toBe(1);
-    expect(jumpLetter(jumpGames, 4, -1)).toBe(1);
   });
 });
 

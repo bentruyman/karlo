@@ -13,13 +13,20 @@ import {
   writeFile,
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
+import { basename, dirname, extname, join } from "node:path";
+
 import {
-  basename,
-  dirname,
-  extname,
-  join,
-  resolve,
-} from "node:path";
+  collectGlob,
+  die,
+  ensureDir,
+  hardlinkFile,
+  isDirectory,
+  isFile,
+  pathExists,
+  resolvePath,
+  sameFile,
+  shellQuote,
+} from "./lib";
 
 const DEFAULT_SOURCE_ROOT = "/Users/bentruyman/Downloads/arcade";
 const DEFAULT_OUTPUT_ROOT = join(DEFAULT_SOURCE_ROOT, "karlo-library");
@@ -142,77 +149,11 @@ Options:
 `);
 }
 
-function resolvePath(path: string) {
-  if (path === "~") return process.env.HOME ?? path;
-  if (path.startsWith("~/")) return resolve(process.env.HOME ?? ".", path.slice(2));
-  return resolve(path);
-}
-
-function die(message: string): never {
-  console.error(`error: ${message}`);
-  process.exit(1);
-}
-
 function requireCommand(name: string) {
   const result = spawnSync("sh", ["-c", `command -v ${shellQuote(name)}`], {
     stdio: "ignore",
   });
   if (result.status !== 0) die(`missing required command: ${name}`);
-}
-
-function shellQuote(value: string) {
-  return `'${value.replaceAll("'", "'\\''")}'`;
-}
-
-async function pathExists(path: string) {
-  try {
-    await access(path);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-async function isFile(path: string) {
-  try {
-    return (await stat(path)).isFile();
-  } catch {
-    return false;
-  }
-}
-
-async function isDirectory(path: string) {
-  try {
-    return (await stat(path)).isDirectory();
-  } catch {
-    return false;
-  }
-}
-
-async function ensureDir(path: string, dryRun: boolean) {
-  if (!dryRun) await mkdir(path, { recursive: true });
-}
-
-async function sameFile(left: string, right: string) {
-  try {
-    const [leftStat, rightStat] = await Promise.all([stat(left), stat(right)]);
-    return leftStat.dev === rightStat.dev && leftStat.ino === rightStat.ino;
-  } catch {
-    return false;
-  }
-}
-
-async function hardlinkFile(source: string, target: string, dryRun: boolean) {
-  if (await pathExists(target)) {
-    if (await sameFile(source, target)) return "existing";
-    throw new Error(`refusing to overwrite existing file: ${target}`);
-  }
-
-  if (dryRun) return "linked";
-
-  await ensureDir(dirname(target), false);
-  await link(source, target);
-  return "linked";
 }
 
 async function listMachineNames(romRoot: string) {
@@ -251,14 +192,6 @@ async function artworkArchives(artworkRoot: string, archiveName: string) {
       leftKey[2].localeCompare(rightKey[2])
     );
   });
-}
-
-async function collectGlob(pattern: string, cwd: string) {
-  const entries = [];
-  for await (const entry of new Bun.Glob(pattern).scan(cwd)) {
-    entries.push(entry);
-  }
-  return entries;
 }
 
 function isBenignBsdtarWarning(stderr: string) {

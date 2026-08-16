@@ -34,19 +34,18 @@ export function cabinetConfigToDraft(
   };
 }
 
+const CALIBRATION_FIELDS = [
+  ["topInsetPercent", "Top inset"],
+  ["rightInsetPercent", "Right inset"],
+  ["bottomInsetPercent", "Bottom inset"],
+  ["leftInsetPercent", "Left inset"],
+] as const;
+
 export function parseCabinetConfigDraft(
   draft: CabinetConfigDraft,
   baseConfig: CabinetConfig,
-  options: {
-    requireMameExecutablePath?: boolean;
-    requireLibraryRoots?: boolean;
-  } = {},
+  options: { requireLibraryRoots?: boolean } = {},
 ): { ok: true; value: CabinetConfig } | { ok: false; message: string } {
-  const mameExecutablePath = options.requireMameExecutablePath
-    ? requiredPath(draft.mameExecutablePath, "MAME executable path")
-    : { ok: true as const, value: draft.mameExecutablePath.trim() };
-  if (!mameExecutablePath.ok) return mameExecutablePath;
-
   const romRoots = parseRootList(
     draft.romRootsText,
     "ROM roots",
@@ -69,37 +68,12 @@ export function parseCabinetConfigDraft(
   );
   if (!attractTimeoutSeconds.ok) return attractTimeoutSeconds;
 
-  const topInsetPercent = parseIntegerField(
-    draft.topInsetPercent,
-    "Top inset",
-    0,
-    25,
-  );
-  if (!topInsetPercent.ok) return topInsetPercent;
-
-  const rightInsetPercent = parseIntegerField(
-    draft.rightInsetPercent,
-    "Right inset",
-    0,
-    25,
-  );
-  if (!rightInsetPercent.ok) return rightInsetPercent;
-
-  const bottomInsetPercent = parseIntegerField(
-    draft.bottomInsetPercent,
-    "Bottom inset",
-    0,
-    25,
-  );
-  if (!bottomInsetPercent.ok) return bottomInsetPercent;
-
-  const leftInsetPercent = parseIntegerField(
-    draft.leftInsetPercent,
-    "Left inset",
-    0,
-    25,
-  );
-  if (!leftInsetPercent.ok) return leftInsetPercent;
+  const displayCalibration = {} as CabinetConfig["displayCalibration"];
+  for (const [key, label] of CALIBRATION_FIELDS) {
+    const parsed = parseIntegerField(draft[key], label, 0, 25);
+    if (!parsed.ok) return parsed;
+    displayCalibration[key] = parsed.value;
+  }
 
   return {
     ok: true,
@@ -107,7 +81,7 @@ export function parseCabinetConfigDraft(
       ...baseConfig,
       paths: {
         ...baseConfig.paths,
-        mameExecutablePath: mameExecutablePath.value,
+        mameExecutablePath: draft.mameExecutablePath.trim(),
         mameIniPath: optionalValue(draft.mameIniPath),
         romRoots: romRoots.value,
         mediaRoots: mediaRoots.value,
@@ -116,12 +90,7 @@ export function parseCabinetConfigDraft(
         categoryIniPath: optionalValue(draft.categoryIniPath),
       },
       attractTimeoutSeconds: attractTimeoutSeconds.value,
-      displayCalibration: {
-        topInsetPercent: topInsetPercent.value,
-        rightInsetPercent: rightInsetPercent.value,
-        bottomInsetPercent: bottomInsetPercent.value,
-        leftInsetPercent: leftInsetPercent.value,
-      },
+      displayCalibration,
     },
   };
 }
@@ -131,17 +100,6 @@ function splitRoots(value: string) {
     .split("\n")
     .map((line) => line.trim())
     .filter(Boolean);
-}
-
-function requiredPath(
-  value: string,
-  label: string,
-): { ok: true; value: string } | { ok: false; message: string } {
-  const trimmed = value.trim();
-  if (trimmed.length === 0) {
-    return { ok: false, message: `${label} is required.` };
-  }
-  return { ok: true, value: trimmed };
 }
 
 function parseRootList(

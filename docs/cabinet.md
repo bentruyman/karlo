@@ -30,7 +30,6 @@ sudo apt install \
   libssl-dev \
   libayatana-appindicator3-dev \
   librsvg2-dev \
-  python3 \
   xorg \
   xinit
 ```

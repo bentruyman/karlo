@@ -8,7 +8,7 @@ use std::{
 use rusqlite::{params, Connection, OptionalExtension};
 use tauri::{Manager, Runtime};
 
-use crate::{contract, db, importer, seed};
+use crate::{contract, db, importer};
 
 const DATABASE_FILENAME: &str = "karlo.sqlite3";
 
@@ -31,7 +31,6 @@ impl AppState {
 
         state.ensure_schema()?;
         state.seed_default_settings()?;
-        state.seed_mock_library_data()?;
 
         Ok(state)
     }
@@ -183,41 +182,6 @@ impl AppState {
         self.load_library_snapshot()
     }
 
-    pub fn import_mame_catalog(&self) -> Result<contract::LibraryMaintenanceResult, String> {
-        let cabinet_config = self.load_cabinet_config()?;
-        let imported_machines =
-            importer::import_mame_catalog(&cabinet_config.paths.mame_executable_path)?;
-        let (category_genres, category_warning) =
-            load_category_genres(cabinet_config.paths.category_ini_path.as_deref());
-        let mut connection = self.open_connection()?;
-        let transaction = connection
-            .transaction()
-            .map_err(|error| error.to_string())?;
-        let existing_games = self.load_existing_game_state(&transaction)?;
-
-        upsert_imported_machines(&transaction, &imported_machines, &existing_games)?;
-        let categorized_games_count = apply_category_genres(&transaction, &category_genres)?;
-
-        transaction.commit().map_err(|error| error.to_string())?;
-        let snapshot = self.load_library_snapshot()?;
-        let rom_available_count = snapshot
-            .imported_games
-            .iter()
-            .filter(|game| game.rom_available)
-            .count();
-
-        Ok(contract::LibraryMaintenanceResult {
-            snapshot,
-            imported_games_count: imported_machines.len(),
-            rom_available_count,
-            message: catalog_import_message(
-                imported_machines.len(),
-                categorized_games_count,
-                category_warning,
-            ),
-        })
-    }
-
     pub fn scan_rom_roots(&self) -> Result<contract::LibraryMaintenanceResult, String> {
         let cabinet_config = self.load_cabinet_config()?;
         let discovered_machine_names = importer::scan_rom_roots(&cabinet_config.paths.rom_roots)?;
@@ -310,91 +274,6 @@ impl AppState {
         Ok(())
     }
 
-    fn seed_mock_library_data(&self) -> Result<(), String> {
-        let mut connection = self.open_connection()?;
-        let existing_games: i64 = connection
-            .query_row("SELECT COUNT(*) FROM games", [], |row| row.get(0))
-            .map_err(|error| error.to_string())?;
-
-        if existing_games > 0 {
-            return Ok(());
-        }
-
-        let catalog = seed::mock_catalog()?;
-        let transaction = connection
-            .transaction()
-            .map_err(|error| error.to_string())?;
-        let mut recent_index = 0_u32;
-
-        for (index, record) in catalog.iter().enumerate() {
-            let video_path = record
-                .attract_caption
-                .as_ref()
-                .map(|_| format!("media/previews/{}.mp4", record.machine_name));
-            let artwork_paths = if record.attract_caption.is_some() {
-                vec![format!("media/artwork/{}.png", record.machine_name)]
-            } else {
-                Vec::new()
-            };
-
-            transaction
-                .execute(
-                    "INSERT INTO games (
-                        machine_name,
-                        title,
-                        year,
-                        manufacturer,
-                        genre,
-                        rom_available,
-                        video_path,
-                        artwork_paths_json
-                     ) VALUES (?1, ?2, ?3, ?4, ?5, 1, ?6, ?7)",
-                    params![
-                        record.machine_name,
-                        record.title,
-                        i64::from(record.year),
-                        record.manufacturer,
-                        record.genre,
-                        video_path,
-                        serde_json::to_string(&artwork_paths).map_err(|error| error.to_string())?,
-                    ],
-                )
-                .map_err(|error| error.to_string())?;
-
-            let game_id = transaction.last_insert_rowid();
-            transaction
-                .execute(
-                    "INSERT INTO library_entries (
-                        game_id,
-                        is_visible,
-                        is_favorite,
-                        browse_sort_order,
-                        attract_sort_order,
-                        include_in_attract_mode
-                     ) VALUES (?1, 1, ?2, ?3, ?4, 1)",
-                    params![
-                        game_id,
-                        record.is_favorite.unwrap_or(false),
-                        index as i64,
-                        index as i64,
-                    ],
-                )
-                .map_err(|error| error.to_string())?;
-
-            if record.was_recently_played.unwrap_or(false) {
-                transaction
-                    .execute(
-                        "INSERT INTO recent_games (game_id, last_played_at) VALUES (?1, ?2)",
-                        params![game_id, seed_recent_timestamp(recent_index)],
-                    )
-                    .map_err(|error| error.to_string())?;
-                recent_index += 1;
-            }
-        }
-
-        transaction.commit().map_err(|error| error.to_string())
-    }
-
     fn load_settings_map(
         &self,
         connection: &Connection,
@@ -458,7 +337,6 @@ impl AppState {
                             )
                         })?
                         .unwrap_or_default(),
-                    attract_caption: None,
                 })
             })
             .map_err(|error| error.to_string())?;
@@ -466,20 +344,6 @@ impl AppState {
         let mut imported_games = Vec::new();
         for row in rows {
             imported_games.push(row.map_err(|error| error.to_string())?);
-        }
-
-        let catalog = seed::mock_catalog()?;
-        let captions_by_machine = catalog
-            .into_iter()
-            .filter_map(|record| {
-                record
-                    .attract_caption
-                    .map(|caption| (record.machine_name, caption))
-            })
-            .collect::<HashMap<_, _>>();
-
-        for game in &mut imported_games {
-            game.attract_caption = captions_by_machine.get(&game.machine_name).cloned();
         }
 
         Ok(imported_games)
@@ -700,10 +564,6 @@ fn current_timestamp_text() -> Result<String, String> {
         .map_err(|error| error.to_string())?
         .as_secs();
     Ok(seconds.to_string())
-}
-
-fn seed_recent_timestamp(index: u32) -> String {
-    (1_776_470_400_u64 + u64::from(index)).to_string()
 }
 
 fn load_game_rows(connection: &Connection) -> Result<Vec<GameRow>, String> {
@@ -940,18 +800,6 @@ fn next_library_sort_order(connection: &Connection) -> Result<i64, String> {
         .map_err(|error| error.to_string())
 }
 
-fn catalog_import_message(
-    imported_metadata_count: usize,
-    categorized_games_count: usize,
-    category_warning: Option<String>,
-) -> String {
-    let mut message = format!(
-        "Imported {imported_metadata_count} MAME machines from -listxml and applied {categorized_games_count} category genres."
-    );
-    append_warnings(&mut message, [category_warning]);
-    message
-}
-
 struct ScanMessageCounts {
     rom_roots_count: usize,
     media_roots_count: usize,
@@ -971,16 +819,12 @@ fn scan_message(counts: ScanMessageCounts, warnings: [Option<String>; 2]) -> Str
         counts.imported_metadata_count,
         counts.categorized_games_count,
     );
-    append_warnings(&mut message, warnings);
-    message
-}
-
-fn append_warnings<const N: usize>(message: &mut String, warnings: [Option<String>; N]) {
     let warnings = warnings.into_iter().flatten().collect::<Vec<_>>();
     if !warnings.is_empty() {
         message.push_str(" Warnings: ");
         message.push_str(&warnings.join(" "));
     }
+    message
 }
 
 struct MediaRootCandidates {
@@ -1102,6 +946,26 @@ mod tests {
 
     use super::*;
 
+    fn seed_games(state: &AppState, machine_names: &[&str]) {
+        let connection = state.open_connection().unwrap();
+        for (index, machine_name) in machine_names.iter().enumerate() {
+            connection
+                .execute(
+                    "INSERT INTO games (machine_name, title, year, manufacturer, genre, rom_available)
+                     VALUES (?1, ?1, 1984, 'Test', 'Test', 1)",
+                    params![machine_name],
+                )
+                .unwrap();
+            connection
+                .execute(
+                    "INSERT INTO library_entries (game_id, is_visible, is_favorite, browse_sort_order)
+                     VALUES (?1, 1, 0, ?2)",
+                    params![connection.last_insert_rowid(), index as i64],
+                )
+                .unwrap();
+        }
+    }
+
     #[test]
     fn cabinet_config_round_trips_through_sqlite_settings() {
         let path = temp_database_path("round-trip");
@@ -1144,26 +1008,20 @@ mod tests {
     }
 
     #[test]
-    fn library_snapshot_seeds_from_shared_mock_catalog() {
+    fn library_snapshot_reads_games_and_entries() {
         let path = temp_database_path("library-seed");
         let state = AppState {
             db_path: path.clone(),
         };
         state.ensure_schema().unwrap();
-        state.seed_mock_library_data().unwrap();
+        seed_games(&state, &["1942", "pacman"]);
 
         let snapshot = state.load_library_snapshot().unwrap();
 
-        assert!(snapshot.imported_games.len() > 30);
+        assert_eq!(snapshot.imported_games.len(), 2);
         assert_eq!(snapshot.imported_games[0].machine_name, "1942");
-        assert!(snapshot
-            .library_entries
-            .iter()
-            .any(|entry| entry.is_favorite));
-        assert!(snapshot
-            .recent_games
-            .iter()
-            .any(|entry| entry.machine_name == "pacman"));
+        assert_eq!(snapshot.library_entries.len(), 2);
+        assert!(snapshot.recent_games.is_empty());
 
         let _ = fs::remove_file(path);
     }
@@ -1175,7 +1033,7 @@ mod tests {
             db_path: path.clone(),
         };
         state.ensure_schema().unwrap();
-        state.seed_mock_library_data().unwrap();
+        seed_games(&state, &["1942"]);
 
         let snapshot = state.toggle_game_favorite("1942").unwrap();
         let game = snapshot
@@ -1208,7 +1066,7 @@ mod tests {
         };
         state.ensure_schema().unwrap();
         state.seed_default_settings().unwrap();
-        state.seed_mock_library_data().unwrap();
+        seed_games(&state, &["1942", "digdug"]);
 
         fs::create_dir_all(&rom_root).unwrap();
         fs::create_dir_all(video_path.parent().unwrap()).unwrap();

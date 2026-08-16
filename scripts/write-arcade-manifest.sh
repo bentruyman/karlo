@@ -16,22 +16,17 @@ artifact_name="$(basename "$artifact_path")"
 artifact_sha="$(shasum -a 256 "$artifact_path" | awk '{print $1}')"
 artifact_url="https://github.com/${repo_full_name}/releases/download/${release_tag}/${artifact_name}"
 
-python3 - "$commit_sha" "$built_at" "$artifact_url" "$artifact_sha" "$output_path" <<'PY'
-import json
-import sys
-
-payload = {
-    "channel": "stable",
-    "commit": sys.argv[1],
-    "built_at": sys.argv[2],
-    "artifact": {
-        "format": "appimage",
-        "url": sys.argv[3],
-        "sha256": sys.argv[4],
-    },
+# Every value here is a commit sha, an RFC3339 stamp, a URL, or a hex digest,
+# so none of them need JSON string escaping.
+cat >"$output_path" <<EOF
+{
+  "channel": "stable",
+  "commit": "${commit_sha}",
+  "built_at": "${built_at}",
+  "artifact": {
+    "format": "appimage",
+    "url": "${artifact_url}",
+    "sha256": "${artifact_sha}"
+  }
 }
-
-with open(sys.argv[5], "w", encoding="utf-8") as handle:
-    json.dump(payload, handle, indent=2)
-    handle.write("\n")
-PY
+EOF

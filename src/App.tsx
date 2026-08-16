@@ -15,6 +15,7 @@ import {
   wrapIndex,
 } from "./app/browse";
 import {
+  BROWSE_VIEWS,
   DEFAULT_LIBRARY_SNAPSHOT,
   DEFAULT_FRONTEND_BOOTSTRAP,
   launchMameGame,
@@ -41,6 +42,7 @@ import {
   type CabinetConfigDraft,
 } from "./app/cabinet-config";
 import {
+  getServiceFieldKeys,
   getServiceSectionIndex,
   moveServiceFocus,
   SERVICE_SECTIONS,
@@ -61,7 +63,6 @@ import {
 } from "./app/library";
 import { getPreviewMedia, setMediaHttpBaseUrl } from "./app/media";
 import type {
-  BrowseView,
   BrowseViewId,
   CabinetConfig,
   GameRecord,
@@ -130,7 +131,7 @@ export default function App() {
   const [launchStatus, setLaunchStatus] = useState<LaunchStatus>("idle");
   const [viewIndex, setViewIndex] = useState(() =>
     Math.max(
-      DEFAULT_FRONTEND_BOOTSTRAP.curation.browseViews.findIndex(
+      BROWSE_VIEWS.findIndex(
         (view) => view.id === DEFAULT_FRONTEND_BOOTSTRAP.defaultView,
       ),
       0,
@@ -145,13 +146,12 @@ export default function App() {
     Partial<Record<ServiceFieldKey, HTMLInputElement | HTMLTextAreaElement | null>>
   >({});
 
-  const browseViews = bootstrap.curation.browseViews;
+  const browseViews = BROWSE_VIEWS;
   const games = useMemo(
     () => buildGameRecords(importedGames, libraryEntries, recentGames),
     [importedGames, libraryEntries, recentGames],
   );
-  const activeView =
-    browseViews[viewIndex] ?? DEFAULT_FRONTEND_BOOTSTRAP.curation.browseViews[0];
+  const activeView = browseViews[viewIndex] ?? browseViews[0];
   const visibleState = useMemo(
     () => getGamesForView(activeView.id, games),
     [activeView.id, games],
@@ -253,23 +253,12 @@ export default function App() {
   }
 
   function resetCalibrationDraft() {
+    const defaults =
+      DEFAULT_FRONTEND_BOOTSTRAP.cabinetConfig.displayCalibration;
     setSettingsDraft((current) => ({
       ...current,
-      topInsetPercent: String(
-        DEFAULT_FRONTEND_BOOTSTRAP.cabinetConfig.displayCalibration
-          .topInsetPercent,
-      ),
-      rightInsetPercent: String(
-        DEFAULT_FRONTEND_BOOTSTRAP.cabinetConfig.displayCalibration
-          .rightInsetPercent,
-      ),
-      bottomInsetPercent: String(
-        DEFAULT_FRONTEND_BOOTSTRAP.cabinetConfig.displayCalibration
-          .bottomInsetPercent,
-      ),
-      leftInsetPercent: String(
-        DEFAULT_FRONTEND_BOOTSTRAP.cabinetConfig.displayCalibration
-          .leftInsetPercent,
+      ...Object.fromEntries(
+        CALIBRATION_EDGES.map((edge) => [edge.key, String(defaults[edge.key])]),
       ),
     }));
     setSettingsStatus("idle");
@@ -435,10 +424,7 @@ export default function App() {
   }
 
   const persistSettingsDraft = useEffectEvent(
-    async (options?: {
-      requireMameExecutablePath?: boolean;
-      requireLibraryRoots?: boolean;
-    }) => {
+    async (options?: { requireLibraryRoots?: boolean }) => {
       const parsed = parseCabinetConfigDraft(
         settingsDraft,
         activeCabinetConfig,
@@ -1087,6 +1073,34 @@ type LaunchStatus =
   | "launching"
   | { kind: "error"; message: string };
 
+/** Shared cabinet focus treatment: accent wash plus ring. */
+function focusStyle(isFocused: boolean, tone: "subtle" | "panel" = "panel") {
+  if (!isFocused) {
+    return {
+      background: tone === "panel" ? "rgba(255,255,255,0.02)" : "transparent",
+      boxShadow: "none",
+      color: "var(--color-cab-mute)",
+    };
+  }
+
+  return {
+    background:
+      tone === "panel"
+        ? "linear-gradient(90deg, rgba(248,216,79,0.16), rgba(248,216,79,0.03))"
+        : "rgba(248,216,79,0.08)",
+    boxShadow: "0 0 0 0.32cqh rgba(248,216,79,0.34)",
+    color: "var(--color-cab-ink)",
+  };
+}
+
+/** The accent-filled save button keeps its fill and only gains a ring. */
+function saveButtonStyle(isFocused: boolean) {
+  return {
+    boxShadow: isFocused ? "0 0 0 0.32cqh rgba(248,216,79,0.34)" : "none",
+    filter: isFocused ? "brightness(1.05)" : "none",
+  };
+}
+
 function getStatusBadge(status: ServiceMenuStatus) {
   return status === "idle"
     ? { label: "Ready", tone: "var(--color-cab-mute)" }
@@ -1109,7 +1123,7 @@ function ModeBar({
   onFocusZone,
   onSelect,
 }: {
-  browseViews: BrowseView[];
+  browseViews: typeof BROWSE_VIEWS;
   activeIndex: number;
   isFocused: boolean;
   summaries: Map<BrowseViewId, { statLabel: string; statValue: number }>;
@@ -1535,16 +1549,6 @@ function PreviewColumn({ game }: { game: GameRecord }) {
           className="absolute inset-x-0 bottom-0 h-[24%] bg-gradient-to-t from-black/80 to-transparent"
         />
 
-        <div className="absolute inset-[3%] flex flex-col justify-between pointer-events-none">
-          {game.attractCaption && previewMedia.kind === "none" && (
-            <p
-              className="font-sans leading-[1.2] text-cab-ink max-w-[80%]"
-              style={{ fontSize: "2.4cqh", textShadow: "0 0.25cqh 0.8cqh #000" }}
-            >
-              {game.attractCaption}
-            </p>
-          )}
-        </div>
       </div>
 
       <div className="flex flex-col gap-[1cqh]">
@@ -1803,18 +1807,7 @@ function ServiceMenu({
                 className="rounded-none bg-transparent px-[1.2cqw] py-[0.7cqh] font-display text-cab-mute ring-1 ring-cab-rule"
                 style={{
                   fontSize: "1.9cqh",
-                  color:
-                    serviceFocus.zone === "close"
-                      ? "var(--color-cab-ink)"
-                      : "var(--color-cab-mute)",
-                  boxShadow:
-                    serviceFocus.zone === "close"
-                      ? "0 0 0 0.32cqh rgba(248,216,79,0.34)"
-                      : "none",
-                  background:
-                    serviceFocus.zone === "close"
-                      ? "rgba(248,216,79,0.08)"
-                      : "transparent",
+                  ...focusStyle(serviceFocus.zone === "close", "subtle"),
                 }}
               >
                 CLOSE
@@ -1838,14 +1831,10 @@ function ServiceMenu({
                         onClick={() => onSectionChange(section.id)}
                         className="w-full rounded-none px-[1.2cqw] py-[1.15cqh] text-left ring-1 ring-cab-rule"
                         style={{
-                          background: isFocused
-                            ? "linear-gradient(90deg, rgba(248,216,79,0.16), rgba(248,216,79,0.03))"
-                            : isActive
-                              ? "rgba(248,216,79,0.07)"
-                              : "rgba(255,255,255,0.02)",
-                          boxShadow: isFocused
-                            ? "0 0 0 0.32cqh rgba(248,216,79,0.34)"
-                            : "none",
+                          ...focusStyle(isFocused),
+                          ...(!isFocused && isActive
+                            ? { background: "rgba(248,216,79,0.07)" }
+                            : {}),
                         }}
                       >
                         <div
@@ -1885,148 +1874,28 @@ function ServiceMenu({
             </aside>
 
             <section className="min-h-0 overflow-y-auto pr-[0.6cqw]">
-              {settingsSection === "launch" && (
-                <SettingsSection
-                  title="Launch Runtime"
-                  subtitle="Define where Karlo finds MAME and how the cabinet runtime boots."
-                >
-                  <FieldGroup>
-                    <TextInputField
-                      id="mameExecutablePath"
-                      fieldKey="mameExecutablePath"
-                      label="MAME executable path"
-                      name="mameExecutablePath"
-                      value={settingsDraft.mameExecutablePath}
-                      placeholder="/usr/local/bin/mame"
-                      isFocused={
-                        serviceFocus.zone === "field" &&
-                        serviceFocus.key === "mameExecutablePath"
-                      }
-                      isEditing={editingField === "mameExecutablePath"}
+              <SettingsSection
+                title={SECTION_COPY[settingsSection].title}
+                subtitle={SECTION_COPY[settingsSection].subtitle}
+              >
+                <div className="grid gap-[1.2cqh]">
+                  {getServiceFieldKeys(settingsSection).map((fieldKey) => (
+                    <Field
+                      key={fieldKey}
+                      {...FIELD_SPECS[fieldKey]}
+                      fieldKey={fieldKey}
+                      value={settingsDraft[fieldKey]}
+                      serviceFocus={serviceFocus}
+                      editingField={editingField}
                       fieldRefs={fieldRefs}
-                      onChange={(value) => onChange("mameExecutablePath", value)}
+                      onChange={onChange}
                       onFocusChange={onFocusChange}
                       onActivate={onFieldActivate}
                       onBlur={onFieldBlur}
                     />
-                    <TextInputField
-                      id="mameIniPath"
-                      fieldKey="mameIniPath"
-                      label="Optional mame.ini path"
-                      name="mameIniPath"
-                      value={settingsDraft.mameIniPath}
-                      placeholder="/etc/mame.ini"
-                      isFocused={
-                        serviceFocus.zone === "field" &&
-                        serviceFocus.key === "mameIniPath"
-                      }
-                      isEditing={editingField === "mameIniPath"}
-                      fieldRefs={fieldRefs}
-                      onChange={(value) => onChange("mameIniPath", value)}
-                      onFocusChange={onFocusChange}
-                      onActivate={onFieldActivate}
-                      onBlur={onFieldBlur}
-                    />
-                  </FieldGroup>
-                </SettingsSection>
-              )}
+                  ))}
 
-              {settingsSection === "media" && (
-                <SettingsSection
-                  title="Library and Media Roots"
-                  subtitle="Manual scans only run against these persisted roots."
-                >
-                  <FieldGroup>
-                    <TextAreaField
-                      id="romRootsText"
-                      fieldKey="romRootsText"
-                      label="ROM roots"
-                      name="romRootsText"
-                      value={settingsDraft.romRootsText}
-                      placeholder={"/roms/main\n/roms/overflow"}
-                      isFocused={
-                        serviceFocus.zone === "field" &&
-                        serviceFocus.key === "romRootsText"
-                      }
-                      isEditing={editingField === "romRootsText"}
-                      fieldRefs={fieldRefs}
-                      onChange={(value) => onChange("romRootsText", value)}
-                      onFocusChange={onFocusChange}
-                      onActivate={onFieldActivate}
-                      onBlur={onFieldBlur}
-                    />
-                    <TextAreaField
-                      id="mediaRootsText"
-                      fieldKey="mediaRootsText"
-                      label="Media roots"
-                      name="mediaRootsText"
-                      value={settingsDraft.mediaRootsText}
-                      placeholder={"/media/cabinet\n/media/import"}
-                      isFocused={
-                        serviceFocus.zone === "field" &&
-                        serviceFocus.key === "mediaRootsText"
-                      }
-                      isEditing={editingField === "mediaRootsText"}
-                      fieldRefs={fieldRefs}
-                      onChange={(value) => onChange("mediaRootsText", value)}
-                      onFocusChange={onFocusChange}
-                      onActivate={onFieldActivate}
-                      onBlur={onFieldBlur}
-                    />
-                    <TextInputField
-                      id="previewVideoRoot"
-                      fieldKey="previewVideoRoot"
-                      label="Preview video root"
-                      name="previewVideoRoot"
-                      value={settingsDraft.previewVideoRoot}
-                      placeholder="/media/cabinet/videos"
-                      isFocused={
-                        serviceFocus.zone === "field" &&
-                        serviceFocus.key === "previewVideoRoot"
-                      }
-                      isEditing={editingField === "previewVideoRoot"}
-                      fieldRefs={fieldRefs}
-                      onChange={(value) => onChange("previewVideoRoot", value)}
-                      onFocusChange={onFocusChange}
-                      onActivate={onFieldActivate}
-                      onBlur={onFieldBlur}
-                    />
-                    <TextInputField
-                      id="artworkRoot"
-                      fieldKey="artworkRoot"
-                      label="Artwork root"
-                      name="artworkRoot"
-                      value={settingsDraft.artworkRoot}
-                      placeholder="/media/cabinet/artwork"
-                      isFocused={
-                        serviceFocus.zone === "field" &&
-                        serviceFocus.key === "artworkRoot"
-                      }
-                      isEditing={editingField === "artworkRoot"}
-                      fieldRefs={fieldRefs}
-                      onChange={(value) => onChange("artworkRoot", value)}
-                      onFocusChange={onFocusChange}
-                      onActivate={onFieldActivate}
-                      onBlur={onFieldBlur}
-                    />
-                    <TextInputField
-                      id="categoryIniPath"
-                      fieldKey="categoryIniPath"
-                      label="Optional category INI"
-                      name="categoryIniPath"
-                      value={settingsDraft.categoryIniPath}
-                      placeholder="/srv/karlo/library/metadata/Category.ini"
-                      isFocused={
-                        serviceFocus.zone === "field" &&
-                        serviceFocus.key === "categoryIniPath"
-                      }
-                      isEditing={editingField === "categoryIniPath"}
-                      fieldRefs={fieldRefs}
-                      onChange={(value) => onChange("categoryIniPath", value)}
-                      onFocusChange={onFocusChange}
-                      onActivate={onFieldActivate}
-                      onBlur={onFieldBlur}
-                    />
+                  {settingsSection === "media" && (
                     <ServicePanelLauncher
                       title="SCAN LIBRARY"
                       body="Walk the configured ROM and media roots, refresh resolved media paths, and import MAME and category metadata when configured."
@@ -2036,93 +1905,37 @@ function ServiceMenu({
                         serviceFocus.action === "scanRoms"
                       }
                       onFocusChange={() =>
-                        onFocusChange({
-                          zone: "panelActions",
-                          action: "scanRoms",
-                        })
+                        onFocusChange({ zone: "panelActions", action: "scanRoms" })
                       }
                       onRun={onScanRoms}
                     />
-                  </FieldGroup>
-                </SettingsSection>
-              )}
+                  )}
 
-              {settingsSection === "display" && (
-                <SettingsSection
-                  title="Display and Timing"
-                  subtitle="Tune idle behavior here, then open the dedicated display calibration surface for live safe-area work."
-                >
-                  <FieldGroup>
-                    <NumberInputField
-                      id="attractTimeoutSeconds"
-                      fieldKey="attractTimeoutSeconds"
-                      label="Attract timeout (seconds)"
-                      name="attractTimeoutSeconds"
-                      min={5}
-                      max={600}
-                      value={settingsDraft.attractTimeoutSeconds}
-                      isFocused={
-                        serviceFocus.zone === "field" &&
-                        serviceFocus.key === "attractTimeoutSeconds"
-                      }
-                      isEditing={editingField === "attractTimeoutSeconds"}
-                      fieldRefs={fieldRefs}
-                      onChange={(value) =>
-                        onChange("attractTimeoutSeconds", value)
-                      }
-                      onFocusChange={onFocusChange}
-                      onActivate={onFieldActivate}
-                      onBlur={onFieldBlur}
-                    />
+                  {settingsSection === "display" && (
+                    <>
+                      <CalibrationLauncher
+                        settingsDraft={settingsDraft}
+                        isFocused={
+                          serviceFocus.zone === "panelActions" &&
+                          serviceFocus.action === "openCalibration"
+                        }
+                        onFocusChange={() =>
+                          onFocusChange({
+                            zone: "panelActions",
+                            action: "openCalibration",
+                          })
+                        }
+                        onOpen={onOpenCalibration}
+                      />
 
-                    <CalibrationLauncher
-                      settingsDraft={settingsDraft}
-                      isFocused={
-                        serviceFocus.zone === "panelActions" &&
-                        serviceFocus.action === "openCalibration"
-                      }
-                      onFocusChange={() =>
-                        onFocusChange({
-                          zone: "panelActions",
-                          action: "openCalibration",
-                        })
-                      }
-                      onOpen={onOpenCalibration}
-                    />
-
-                    <InfoPanel
-                      title="Active display profile"
-                      body={`${cabinetConfig.displayProfile} remains fixed at the runtime layer while bezel padding and safe-area values are persisted here.`}
-                    />
-                  </FieldGroup>
-                </SettingsSection>
-              )}
-
-              {settingsSection === "storage" && (
-                <SettingsSection
-                  title="Persistence Boundary"
-                  subtitle="This service surface only edits cabinet configuration, not the curated library."
-                >
-                  <div className="grid gap-[1cqh]">
-                    <StorageRow
-                      label="settings"
-                      value="Launcher paths, media roots, attract timeout, calibration"
-                    />
-                    <StorageRow
-                      label="games"
-                      value="Imported MAME truth and resolved media pointers"
-                    />
-                    <StorageRow
-                      label="library_entries"
-                      value="Cabinet-facing visibility, favorites, and browse ordering"
-                    />
-                    <StorageRow
-                      label="recent_games"
-                      value="Last-played history for launch return and recents"
-                    />
-                  </div>
-                </SettingsSection>
-              )}
+                      <InfoPanel
+                        title="Active display profile"
+                        body={`${cabinetConfig.displayProfile} remains fixed at the runtime layer while bezel padding and safe-area values are persisted here.`}
+                      />
+                    </>
+                  )}
+                </div>
+              </SettingsSection>
             </section>
           </div>
 
@@ -2146,21 +1959,11 @@ function ServiceMenu({
                 className="rounded-none bg-transparent px-[1.2cqw] py-[0.85cqh] font-display text-cab-mute ring-1 ring-cab-rule"
                 style={{
                   fontSize: "1.9cqh",
-                  color:
+                  ...focusStyle(
                     serviceFocus.zone === "actions" &&
-                    serviceFocus.action === "defaults"
-                      ? "var(--color-cab-ink)"
-                      : "var(--color-cab-mute)",
-                  boxShadow:
-                    serviceFocus.zone === "actions" &&
-                    serviceFocus.action === "defaults"
-                      ? "0 0 0 0.32cqh rgba(248,216,79,0.34)"
-                      : "none",
-                  background:
-                    serviceFocus.zone === "actions" &&
-                    serviceFocus.action === "defaults"
-                      ? "rgba(248,216,79,0.08)"
-                      : "transparent",
+                      serviceFocus.action === "defaults",
+                    "subtle",
+                  ),
                 }}
               >
                 DEFAULTS
@@ -2172,16 +1975,10 @@ function ServiceMenu({
                 className="rounded-none bg-cab-accent px-[1.4cqw] py-[0.85cqh] font-display text-black ring-1 ring-cab-accent"
                 style={{
                   fontSize: "2cqh",
-                  boxShadow:
+                  ...saveButtonStyle(
                     serviceFocus.zone === "actions" &&
-                    serviceFocus.action === "save"
-                      ? "0 0 0 0.32cqh rgba(248,216,79,0.34)"
-                      : "none",
-                  filter:
-                    serviceFocus.zone === "actions" &&
-                    serviceFocus.action === "save"
-                      ? "brightness(1.05)"
-                      : "none",
+                      serviceFocus.action === "save",
+                  ),
                 }}
               >
                 SAVE TO SQLITE
@@ -2294,14 +2091,7 @@ function CalibrationScreen({
                         tabIndex={-1}
                         onClick={() => onFocusChange({ zone: "edges", index })}
                         className="w-full rounded-none px-[1.2cqw] py-[1.05cqh] text-left ring-1 ring-cab-rule"
-                        style={{
-                          background: isFocused
-                            ? "linear-gradient(90deg, rgba(248,216,79,0.16), rgba(248,216,79,0.03))"
-                            : "rgba(255,255,255,0.02)",
-                          boxShadow: isFocused
-                            ? "0 0 0 0.32cqh rgba(248,216,79,0.34)"
-                            : "none",
-                        }}
+                        style={focusStyle(isFocused)}
                       >
                         <div className="flex items-baseline justify-between gap-[1cqw]">
                           <div
@@ -2509,21 +2299,11 @@ function CalibrationScreen({
                 className="rounded-none bg-transparent px-[1.2cqw] py-[0.85cqh] font-display text-cab-mute ring-1 ring-cab-rule"
                 style={{
                   fontSize: "1.9cqh",
-                  color:
+                  ...focusStyle(
                     calibrationFocus.zone === "actions" &&
-                    calibrationFocus.action === "back"
-                      ? "var(--color-cab-ink)"
-                      : "var(--color-cab-mute)",
-                  boxShadow:
-                    calibrationFocus.zone === "actions" &&
-                    calibrationFocus.action === "back"
-                      ? "0 0 0 0.32cqh rgba(248,216,79,0.34)"
-                      : "none",
-                  background:
-                    calibrationFocus.zone === "actions" &&
-                    calibrationFocus.action === "back"
-                      ? "rgba(248,216,79,0.08)"
-                      : "transparent",
+                      calibrationFocus.action === "back",
+                    "subtle",
+                  ),
                 }}
               >
                 BACK TO SERVICE
@@ -2535,21 +2315,11 @@ function CalibrationScreen({
                 className="rounded-none bg-transparent px-[1.2cqw] py-[0.85cqh] font-display text-cab-mute ring-1 ring-cab-rule"
                 style={{
                   fontSize: "1.9cqh",
-                  color:
+                  ...focusStyle(
                     calibrationFocus.zone === "actions" &&
-                    calibrationFocus.action === "defaults"
-                      ? "var(--color-cab-ink)"
-                      : "var(--color-cab-mute)",
-                  boxShadow:
-                    calibrationFocus.zone === "actions" &&
-                    calibrationFocus.action === "defaults"
-                      ? "0 0 0 0.32cqh rgba(248,216,79,0.34)"
-                      : "none",
-                  background:
-                    calibrationFocus.zone === "actions" &&
-                    calibrationFocus.action === "defaults"
-                      ? "rgba(248,216,79,0.08)"
-                      : "transparent",
+                      calibrationFocus.action === "defaults",
+                    "subtle",
+                  ),
                 }}
               >
                 DEFAULT FRAME
@@ -2561,16 +2331,10 @@ function CalibrationScreen({
                 className="rounded-none bg-cab-accent px-[1.4cqw] py-[0.85cqh] font-display text-black ring-1 ring-cab-accent"
                 style={{
                   fontSize: "2cqh",
-                  boxShadow:
+                  ...saveButtonStyle(
                     calibrationFocus.zone === "actions" &&
-                    calibrationFocus.action === "save"
-                      ? "0 0 0 0.32cqh rgba(248,216,79,0.34)"
-                      : "none",
-                  filter:
-                    calibrationFocus.zone === "actions" &&
-                    calibrationFocus.action === "save"
-                      ? "brightness(1.05)"
-                      : "none",
+                      calibrationFocus.action === "save",
+                  ),
                 }}
               >
                 SAVE TO SQLITE
@@ -2605,14 +2369,7 @@ function CalibrationLauncher({
         onOpen();
       }}
       className="grid gap-[1.1cqh] rounded-none px-[1.2cqw] py-[1.2cqh] text-left ring-1 ring-cab-rule"
-      style={{
-        background: isFocused
-          ? "linear-gradient(90deg, rgba(248,216,79,0.16), rgba(248,216,79,0.03))"
-          : "rgba(255,255,255,0.02)",
-        boxShadow: isFocused
-          ? "0 0 0 0.32cqh rgba(248,216,79,0.34)"
-          : "none",
-      }}
+      style={focusStyle(isFocused)}
     >
       <div className="flex items-start justify-between gap-[1.4cqw]">
         <div className="grid gap-[0.45cqh]">
@@ -2684,14 +2441,7 @@ function ServicePanelLauncher({
         onRun();
       }}
       className="grid gap-[0.9cqh] rounded-none px-[1.2cqw] py-[1.1cqh] text-left ring-1 ring-cab-rule"
-      style={{
-        background: isFocused
-          ? "linear-gradient(90deg, rgba(248,216,79,0.16), rgba(248,216,79,0.03))"
-          : "rgba(255,255,255,0.02)",
-        boxShadow: isFocused
-          ? "0 0 0 0.32cqh rgba(248,216,79,0.34)"
-          : "none",
-      }}
+      style={focusStyle(isFocused)}
     >
       <div className="flex items-start justify-between gap-[1.4cqw]">
         <div className="grid gap-[0.45cqh]">
@@ -2743,222 +2493,177 @@ function SettingsSection({
   );
 }
 
-function FieldGroup({ children }: { children: ReactNode }) {
-  return <div className="grid gap-[1.2cqh]">{children}</div>;
-}
+const SECTION_COPY: Record<
+  ServiceSectionId,
+  { title: string; subtitle: string }
+> = {
+  launch: {
+    title: "Launch Runtime",
+    subtitle:
+      "Define where Karlo finds MAME and how the cabinet runtime boots.",
+  },
+  media: {
+    title: "Library and Media Roots",
+    subtitle: "Manual scans only run against these persisted roots.",
+  },
+  display: {
+    title: "Display and Timing",
+    subtitle:
+      "Tune idle behavior here, then open the dedicated display calibration surface for live safe-area work.",
+  },
+};
 
-type ServiceFieldControlProps = {
+const FIELD_SPECS: Record<
+  ServiceFieldKey,
+  {
+    kind: "text" | "number" | "area";
+    label: string;
+    placeholder?: string;
+    min?: number;
+    max?: number;
+  }
+> = {
+  mameExecutablePath: {
+    kind: "text",
+    label: "MAME executable path",
+    placeholder: "/usr/local/bin/mame",
+  },
+  mameIniPath: {
+    kind: "text",
+    label: "Optional mame.ini path",
+    placeholder: "/etc/mame.ini",
+  },
+  romRootsText: {
+    kind: "area",
+    label: "ROM roots",
+    placeholder: "/roms/main\n/roms/overflow",
+  },
+  mediaRootsText: {
+    kind: "area",
+    label: "Media roots",
+    placeholder: "/media/cabinet\n/media/import",
+  },
+  previewVideoRoot: {
+    kind: "text",
+    label: "Preview video root",
+    placeholder: "/media/cabinet/videos",
+  },
+  artworkRoot: {
+    kind: "text",
+    label: "Artwork root",
+    placeholder: "/media/cabinet/artwork",
+  },
+  categoryIniPath: {
+    kind: "text",
+    label: "Optional category INI",
+    placeholder: "/srv/karlo/library/metadata/Category.ini",
+  },
+  attractTimeoutSeconds: {
+    kind: "number",
+    label: "Attract timeout (seconds)",
+    min: 5,
+    max: 600,
+  },
+  topInsetPercent: { kind: "number", label: "Top inset", min: 0, max: 25 },
+  rightInsetPercent: { kind: "number", label: "Right inset", min: 0, max: 25 },
+  bottomInsetPercent: { kind: "number", label: "Bottom inset", min: 0, max: 25 },
+  leftInsetPercent: { kind: "number", label: "Left inset", min: 0, max: 25 },
+};
+
+type FieldProps = {
+  kind: "text" | "number" | "area";
   fieldKey: ServiceFieldKey;
   label: string;
-  name: string;
   value: string;
-  isFocused: boolean;
-  isEditing: boolean;
+  placeholder?: string;
+  min?: number;
+  max?: number;
+  serviceFocus: ServiceFocusTarget;
+  editingField: ServiceFieldKey | null;
   fieldRefs: MutableRefObject<
     Partial<Record<ServiceFieldKey, HTMLInputElement | HTMLTextAreaElement | null>>
   >;
-  onChange: (value: string) => void;
+  onChange: (field: ServiceFieldKey, value: string) => void;
   onFocusChange: (focus: ServiceFocusTarget) => void;
   onActivate: (field: ServiceFieldKey) => void;
   onBlur: (field: ServiceFieldKey) => void;
 };
 
-function TextInputField({
-  id,
+const FIELD_INPUT_CLASS =
+  "w-full rounded-none bg-[#090d13] px-[1.1cqw] py-[1cqh] font-sans text-cab-ink ring-1 ring-cab-rule outline-none placeholder:text-cab-dim focus:ring-[0.35cqh] focus:ring-cab-accent/55";
+
+function Field({
+  kind,
   fieldKey,
   label,
-  name,
   value,
   placeholder,
-  isFocused,
-  isEditing,
-  fieldRefs,
-  onChange,
-  onFocusChange,
-  onActivate,
-  onBlur,
-}: ServiceFieldControlProps & {
-  id: string;
-  placeholder: string;
-}) {
-  return (
-    <label
-      htmlFor={id}
-      className="grid gap-[0.55cqh] rounded-none px-[0.7cqw] py-[0.55cqh]"
-      style={{
-        background: isFocused ? "rgba(248,216,79,0.08)" : "transparent",
-        boxShadow: isFocused
-          ? "0 0 0 0.32cqh rgba(248,216,79,0.34)"
-          : "none",
-      }}
-      onClick={() => onFocusChange({ zone: "field", key: fieldKey })}
-      onDoubleClick={() => onActivate(fieldKey)}
-    >
-      <span className="font-display text-cab-ink" style={{ fontSize: "2.2cqh" }}>
-        {label}
-      </span>
-      <input
-        id={id}
-        ref={(element) => {
-          fieldRefs.current[fieldKey] = element;
-        }}
-        name={name}
-        tabIndex={-1}
-        type="text"
-        value={value}
-        placeholder={placeholder}
-        onChange={(event) => onChange(event.currentTarget.value)}
-        onFocus={() => {
-          onFocusChange({ zone: "field", key: fieldKey });
-        }}
-        onBlur={() => onBlur(fieldKey)}
-        className="w-full rounded-none bg-[#090d13] px-[1.1cqw] py-[1cqh] font-sans text-cab-ink ring-1 ring-cab-rule outline-none placeholder:text-cab-dim focus:ring-[0.35cqh] focus:ring-cab-accent/55"
-        style={{
-          fontSize: "2.05cqh",
-          caretColor: isEditing ? "var(--color-cab-accent)" : "transparent",
-        }}
-        readOnly={!isEditing}
-      />
-      <div
-        className="font-sans text-cab-dim"
-        style={{ fontSize: "1.5cqh", lineHeight: 1.2 }}
-      >
-        {isEditing ? "EDITING · ESC TO EXIT" : "PRESS START TO EDIT"}
-      </div>
-    </label>
-  );
-}
-
-function NumberInputField({
-  id,
-  fieldKey,
-  label,
-  name,
-  value,
   min,
   max,
-  isFocused,
-  isEditing,
+  serviceFocus,
+  editingField,
   fieldRefs,
   onChange,
   onFocusChange,
   onActivate,
   onBlur,
-}: ServiceFieldControlProps & {
-  id: string;
-  min: number;
-  max: number;
-}) {
-  return (
-    <label
-      htmlFor={id}
-      className="grid gap-[0.55cqh] rounded-none px-[0.7cqw] py-[0.55cqh]"
-      style={{
-        background: isFocused ? "rgba(248,216,79,0.08)" : "transparent",
-        boxShadow: isFocused
-          ? "0 0 0 0.32cqh rgba(248,216,79,0.34)"
-          : "none",
-      }}
-      onClick={() => onFocusChange({ zone: "field", key: fieldKey })}
-      onDoubleClick={() => onActivate(fieldKey)}
-    >
-      <span className="font-display text-cab-ink" style={{ fontSize: "2.2cqh" }}>
-        {label}
-      </span>
-      <input
-        id={id}
-        ref={(element) => {
-          fieldRefs.current[fieldKey] = element;
-        }}
-        name={name}
-        tabIndex={-1}
-        type="number"
-        min={min}
-        max={max}
-        value={value}
-        onChange={(event) => onChange(event.currentTarget.value)}
-        onFocus={() => {
-          onFocusChange({ zone: "field", key: fieldKey });
-        }}
-        onBlur={() => onBlur(fieldKey)}
-        className="w-full rounded-none bg-[#090d13] px-[1.1cqw] py-[1cqh] font-sans text-cab-ink ring-1 ring-cab-rule outline-none focus:ring-[0.35cqh] focus:ring-cab-accent/55"
-        style={{
-          fontSize: "2.05cqh",
-          caretColor: isEditing ? "var(--color-cab-accent)" : "transparent",
-        }}
-        readOnly={!isEditing}
-      />
-      <div
-        className="font-sans text-cab-dim"
-        style={{ fontSize: "1.5cqh", lineHeight: 1.2 }}
-      >
-        {isEditing ? "EDITING · ESC TO EXIT" : "PRESS START TO EDIT"}
-      </div>
-    </label>
-  );
-}
+}: FieldProps) {
+  const isFocused =
+    serviceFocus.zone === "field" && serviceFocus.key === fieldKey;
+  const isEditing = editingField === fieldKey;
+  const shared = {
+    id: fieldKey,
+    name: fieldKey,
+    tabIndex: -1,
+    value,
+    placeholder,
+    readOnly: !isEditing,
+    ref: (element: HTMLInputElement | HTMLTextAreaElement | null) => {
+      fieldRefs.current[fieldKey] = element;
+    },
+    onChange: (event: { currentTarget: { value: string } }) =>
+      onChange(fieldKey, event.currentTarget.value),
+    onFocus: () => onFocusChange({ zone: "field", key: fieldKey }),
+    onBlur: () => onBlur(fieldKey),
+    style: {
+      fontSize: "2.05cqh",
+      caretColor: isEditing ? "var(--color-cab-accent)" : "transparent",
+    },
+  };
 
-function TextAreaField({
-  id,
-  fieldKey,
-  label,
-  name,
-  value,
-  placeholder,
-  isFocused,
-  isEditing,
-  fieldRefs,
-  onChange,
-  onFocusChange,
-  onActivate,
-  onBlur,
-}: ServiceFieldControlProps & {
-  id: string;
-  placeholder: string;
-}) {
   return (
     <label
-      htmlFor={id}
+      htmlFor={fieldKey}
       className="grid gap-[0.55cqh] rounded-none px-[0.7cqw] py-[0.55cqh]"
-      style={{
-        background: isFocused ? "rgba(248,216,79,0.08)" : "transparent",
-        boxShadow: isFocused
-          ? "0 0 0 0.32cqh rgba(248,216,79,0.34)"
-          : "none",
-      }}
+      style={focusStyle(isFocused, "subtle")}
       onClick={() => onFocusChange({ zone: "field", key: fieldKey })}
       onDoubleClick={() => onActivate(fieldKey)}
     >
       <span className="font-display text-cab-ink" style={{ fontSize: "2.2cqh" }}>
         {label}
       </span>
-      <textarea
-        id={id}
-        ref={(element) => {
-          fieldRefs.current[fieldKey] = element;
-        }}
-        name={name}
-        tabIndex={-1}
-        value={value}
-        placeholder={placeholder}
-        onChange={(event) => onChange(event.currentTarget.value)}
-        onFocus={() => {
-          onFocusChange({ zone: "field", key: fieldKey });
-        }}
-        onBlur={() => onBlur(fieldKey)}
-        className="min-h-[12cqh] w-full resize-none rounded-none bg-[#090d13] px-[1.1cqw] py-[1cqh] font-sans text-cab-ink ring-1 ring-cab-rule outline-none placeholder:text-cab-dim focus:ring-[0.35cqh] focus:ring-cab-accent/55"
-        style={{
-          fontSize: "2.05cqh",
-          lineHeight: 1.25,
-          caretColor: isEditing ? "var(--color-cab-accent)" : "transparent",
-        }}
-        readOnly={!isEditing}
-      />
+
+      {kind === "area" ? (
+        <textarea
+          {...shared}
+          className={`min-h-[12cqh] resize-none ${FIELD_INPUT_CLASS}`}
+          style={{ ...shared.style, lineHeight: 1.25 }}
+        />
+      ) : (
+        <input
+          {...shared}
+          type={kind}
+          min={min}
+          max={max}
+          className={FIELD_INPUT_CLASS}
+        />
+      )}
+
       <div
         className="font-sans text-cab-dim"
         style={{ fontSize: "1.5cqh", lineHeight: 1.2 }}
       >
-        {isEditing ? "EDITING · ESC TO EXIT" : "PRESS START TO EDIT"}
+        {isEditing ? "EDITING \u00b7 ESC TO EXIT" : "PRESS START TO EDIT"}
       </div>
     </label>
   );
@@ -2976,19 +2681,6 @@ function InfoPanel({ title, body }: { title: string; body: string }) {
       >
         {body}
       </p>
-    </div>
-  );
-}
-
-function StorageRow({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="grid grid-cols-[12fr_28fr] gap-[1.2cqw] bg-[#0a0e14] px-[1.2cqw] py-[1.05cqh] ring-1 ring-cab-rule">
-      <div className="font-display text-cab-accent" style={{ fontSize: "2.05cqh" }}>
-        {label}
-      </div>
-      <div className="font-sans text-cab-mute" style={{ fontSize: "1.95cqh", lineHeight: 1.25 }}>
-        {value}
-      </div>
     </div>
   );
 }

@@ -1,11 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-import {
-  getPreviewMedia,
-  setMediaHttpBaseUrl,
-  toMediaSrc,
-  toVideoSrc,
-} from "./media";
+import { getPreviewMedia, setMediaHttpBaseUrl, toMediaSrc } from "./media";
 import type { GameRecord } from "./types";
 
 const baseGame: GameRecord = {
@@ -78,21 +73,15 @@ describe("getPreviewMedia", () => {
 });
 
 describe("toMediaSrc", () => {
-  test("leaves relative paths unchanged outside Tauri", () => {
-    expect(toMediaSrc("media/previews/1942.mp4")).toBe("media/previews/1942.mp4");
-  });
-});
-
-describe("toVideoSrc", () => {
-  test("leaves relative paths unchanged outside Tauri", () => {
+  test("leaves relative paths unchanged", () => {
     setMediaHttpBaseUrl(null);
-    expect(toVideoSrc("media/previews/1942.mp4")).toBe("media/previews/1942.mp4");
+    expect(toMediaSrc("media/previews/1942.mp4")).toBe("media/previews/1942.mp4");
   });
 
   test("uses the media HTTP server for device file paths", () => {
     setMediaHttpBaseUrl("http://127.0.0.1:43210");
 
-    expect(toVideoSrc("/srv/karlo/library/media/mame/videos/1942 one.mp4")).toBe(
+    expect(toMediaSrc("/srv/karlo/library/media/mame/videos/1942 one.mp4")).toBe(
       "http://127.0.0.1:43210/media?path=%2Fsrv%2Fkarlo%2Flibrary%2Fmedia%2Fmame%2Fvideos%2F1942+one.mp4",
     );
 

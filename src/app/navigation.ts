@@ -2,7 +2,7 @@ import type { CabinetConfigDraft } from "./cabinet-config";
 
 export type BrowseFocusZone = "modeBar" | "gameList";
 
-export type ServiceSectionId = "launch" | "media" | "display" | "storage";
+export type ServiceSectionId = "launch" | "media" | "display";
 
 export type ServiceActionId = "defaults" | "save";
 
@@ -29,13 +29,9 @@ export const SERVICE_SECTIONS: Array<{
   { id: "launch", label: "Launch", detail: "MAME runtime paths" },
   { id: "media", label: "Library", detail: "ROM and media scan roots" },
   { id: "display", label: "Display", detail: "LCD timing and safe area" },
-  { id: "storage", label: "Storage", detail: "SQLite boundary summary" },
 ];
 
-const SERVICE_SECTION_FIELDS: Record<
-  Exclude<ServiceSectionId, "storage">,
-  ServiceFieldKey[]
-> = {
+const SERVICE_SECTION_FIELDS: Record<ServiceSectionId, ServiceFieldKey[]> = {
   launch: ["mameExecutablePath", "mameIniPath"],
   media: [
     "romRootsText",
@@ -59,7 +55,6 @@ export function getServiceSectionIndex(sectionId: ServiceSectionId) {
 }
 
 export function getServiceFieldKeys(sectionId: ServiceSectionId): ServiceFieldKey[] {
-  if (sectionId === "storage") return [];
   return SERVICE_SECTION_FIELDS[sectionId];
 }
 

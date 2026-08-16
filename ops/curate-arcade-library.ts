@@ -1,7 +1,18 @@
 #!/usr/bin/env bun
-import { access, link, mkdir, rm, stat, writeFile, copyFile } from "node:fs/promises";
-import { basename, dirname, extname, join, resolve } from "node:path";
+import { link, mkdir, rm, writeFile, copyFile } from "node:fs/promises";
+import { basename, dirname, extname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+
+import {
+  collectGlob,
+  die,
+  ensureDir,
+  isDirectory,
+  isFile,
+  pathExists,
+  resolvePath,
+  sameFile,
+} from "./lib";
 
 const DEFAULT_SOURCE_ROOT = "/Users/bentruyman/Development/src/github.com/bentruyman/karlo-library";
 const DEFAULT_OUTPUT_ROOT = "/Users/bentruyman/Development/src/github.com/bentruyman/karlo-library-curated";
@@ -179,61 +190,6 @@ Options:
   --include MACHINE
   --exclude MACHINE
 `);
-}
-
-function resolvePath(path: string) {
-  if (path === "~") return process.env.HOME ?? path;
-  if (path.startsWith("~/")) return resolve(process.env.HOME ?? ".", path.slice(2));
-  return resolve(path);
-}
-
-function die(message: string): never {
-  console.error(`error: ${message}`);
-  process.exit(1);
-}
-
-async function pathExists(path: string) {
-  try {
-    await access(path);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-async function isFile(path: string) {
-  try {
-    return (await stat(path)).isFile();
-  } catch {
-    return false;
-  }
-}
-
-async function isDirectory(path: string) {
-  try {
-    return (await stat(path)).isDirectory();
-  } catch {
-    return false;
-  }
-}
-
-async function sameFile(left: string, right: string) {
-  try {
-    const [leftStat, rightStat] = await Promise.all([stat(left), stat(right)]);
-    return leftStat.dev === rightStat.dev && leftStat.ino === rightStat.ino;
-  } catch {
-    return false;
-  }
-}
-
-async function ensureDir(path: string, dryRun: boolean) {
-  if (!dryRun) await mkdir(path, { recursive: true });
-}
-
-async function collectGlob(pattern: string, cwd: string) {
-  const entries: string[] = [];
-  for await (const entry of new Bun.Glob(pattern).scan(cwd)) entries.push(entry);
-  return entries;
 }
 
 export async function listRomNames(sourceRoot: string) {

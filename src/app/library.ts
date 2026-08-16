@@ -1,4 +1,4 @@
-import { clampIndex, getTitleBucket, jumpLetter, wrapIndex } from "./browse";
+import { clampIndex, getTitleBucket, wrapIndex } from "./browse";
 import type {
   BrowseViewId,
   GameRecord,
@@ -180,10 +180,6 @@ export function jumpBrowseGroup(
   current: number,
   direction: 1 | -1,
 ) {
-  if (isTitleBucketView(viewId)) {
-    return jumpLetter(games, current, direction);
-  }
-
   if (games.length === 0) return 0;
 
   const start = clampIndex(current, games.length);
