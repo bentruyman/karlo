@@ -4,7 +4,7 @@
   "version": "0.1.0",
   "identifier": "com.truyman.karlo",
   "build": {
-    "beforeDevCommand": "bun run dev",
+    "beforeDevCommand": "bun run dev --strictPort",
     "beforeBuildCommand": "bun run build",
     "devUrl": "http://localhost:1420",
     "frontendDist": "../dist"
