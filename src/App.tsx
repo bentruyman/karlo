@@ -1372,11 +1372,8 @@ function BrowseMarkerRail({
     const present = new Set(labels);
     return (
       <div
-        className="grid items-center font-display tracking-[0.1em]"
-        style={{
-          gridTemplateColumns: `repeat(${TITLE_BUCKETS.length}, minmax(0, 1fr))`,
-          fontSize: "2.4cqh",
-        }}
+        className="flex items-center justify-between font-display tracking-[0.1em]"
+        style={{ fontSize: "2.4cqh" }}
       >
         {TITLE_BUCKETS.map((bucket) => {
           const isPresent = present.has(bucket);
@@ -1384,6 +1381,7 @@ function BrowseMarkerRail({
           return (
             <div key={bucket} className="relative flex justify-center leading-none">
               <span
+                className="whitespace-nowrap"
                 style={{
                   color: isCurrent
                     ? "var(--color-cab-accent)"
