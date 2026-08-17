@@ -23,6 +23,15 @@ Karlo is a Tauri desktop app with a React/TypeScript frontend and Rust backend.
 
 Run the two test commands and `bun run build` before opening a pull request.
 
+## Verifying UI Changes in a Browser
+
+After a visible UI change, verify it yourself with the `agent-browser` skill against the Vite dev server (mock data) instead of asking for a manual check. Things to know:
+
+- A dev server may already be serving this worktree with HMR — check with `ps ax | grep vite` whether one is running from this directory before starting your own. Vite defaults to port 1420 but falls back to the next free port, so don't assume the URL: read it from the dev server's startup output.
+- The app idles into an attract-mode screensaver (bouncing K logo, black screen) after the configured timeout. If a screenshot comes back black, press an arrow key (`agent-browser press ArrowDown`) to wake it — unmapped keys like Escape are ignored (see `HANDLED_KEYS` in `src/App.tsx`).
+- The UI is keyboard-driven like a cabinet: arrows to move, Enter/Z to launch, X to favorite, C/V to switch browse mode. Drive it with `agent-browser press`, not clicks.
+- Layout uses container-query units (`cqh`), so element positions shift with viewport size. Screenshot at the default 1280x720 (use `set viewport 1280 720 2` for retina detail) and crop with `sips` to inspect fine spacing.
+
 ## Coding Style & Naming Conventions
 
 Match existing formatting: two-space indentation in TypeScript/TSX and standard `rustfmt` output in Rust. Use `camelCase` for TypeScript functions and variables, `PascalCase` for React components and types, and `snake_case` for Rust functions and modules. Keep Tauri command names aligned across `src-tauri/src/commands.rs` and `src/app/bootstrap.ts`. No TypeScript formatter or linter is configured; rely on `tsc`, nearby code, and `cargo fmt --all`.
