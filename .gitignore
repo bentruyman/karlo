@@ -4,4 +4,5 @@
 dist
 node_modules
 ops/cabinet.env
+ops/emumovies.env
 src-tauri/target

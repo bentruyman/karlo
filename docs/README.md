@@ -7,6 +7,7 @@ Everything runs offline. Scope is MAME only.
 
 - [Architecture](architecture.md) — app shape, command surface, data, controls
 - [Cabinet](cabinet.md) — building, installing, deploying, and operating the machine
+- [Library](library.md) — NAS mount, EmuMovies asset download, organize/curate/sync pipeline
 
 ## Development
 

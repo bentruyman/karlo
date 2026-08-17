@@ -46,4 +46,4 @@ History follows Conventional Commit prefixes such as `feat:`, `fix:`, `docs:`, `
 
 ## Security & Configuration
 
-Copy `ops/cabinet.env.example` for local cabinet settings. Never commit credentials, cabinet-specific environment files, ROMs, media, or SQLite databases.
+Copy `ops/cabinet.env.example` for local cabinet settings and `ops/emumovies.env.example` for EmuMovies FTP credentials. Never commit credentials, cabinet-specific environment files, ROMs, media, or SQLite databases.

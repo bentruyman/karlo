@@ -7,6 +7,7 @@ import {
   link,
   mkdir,
   mkdtemp,
+  readdir,
   rename,
   rm,
   stat,
@@ -28,14 +29,11 @@ import {
   shellQuote,
 } from "./lib";
 
-const DEFAULT_SOURCE_ROOT = "/Users/bentruyman/Downloads/arcade";
+const DEFAULT_SOURCE_ROOT = "/Volumes/arcade";
 const DEFAULT_OUTPUT_ROOT = join(DEFAULT_SOURCE_ROOT, "karlo-library");
 const ROM_DIR_NAME = "MAME 0.201 ROMs (merged)";
 const OFFICIAL_MEDIA_ROOT = join("EmuMovies", "data", "Official");
-const VIDEO_SNAPS_DIR = join(
-  "Video Snaps (HQ)",
-  "MAME (Video Snaps)(HQ)(EM 20161025)",
-);
+const VIDEO_SNAPS_PARENT = "Video Snaps (HQ)";
 
 type ArtworkSet = {
   key: string;
@@ -70,27 +68,22 @@ type Args = {
 const ARTWORK_SETS: ArtworkSet[] = [
   {
     key: "title",
-    archiveName: "MAME (Title Snaps)(MAME .201)",
+    archiveName: "MAME (Title Snaps)",
     outputDir: "title",
   },
   {
     key: "preview",
-    archiveName: "MAME (Artwork Previews)(MAME .201)",
+    archiveName: "MAME (Artwork Preview",
     outputDir: "preview",
   },
   {
-    key: "marquee",
-    archiveName: "MAME (Marquees)(MAME .201)",
-    outputDir: "marquee",
-  },
-  {
     key: "cabinet",
-    archiveName: "MAME (Cabinets)(MAME .201)",
+    archiveName: "MAME (Cabinets)",
     outputDir: "cabinet",
   },
   {
     key: "flyer",
-    archiveName: "MAME (Flyers)(MAME .201)",
+    archiveName: "MAME (Flyers)",
     outputDir: "flyer",
   },
 ];
@@ -156,6 +149,19 @@ function requireCommand(name: string) {
   if (result.status !== 0) die(`missing required command: ${name}`);
 }
 
+async function resolveVideoSnapRoots(parent: string) {
+  if (!(await isDirectory(parent))) die(`video snap root not found: ${parent}`);
+  const candidates = [];
+  for (const entry of await readdir(parent)) {
+    if (entry.startsWith("MAME") && (await isDirectory(join(parent, entry)))) {
+      candidates.push(entry);
+    }
+  }
+  candidates.sort();
+  if (candidates.length === 0) die(`no MAME directories under ${parent}`);
+  return candidates.map((entry) => join(parent, entry));
+}
+
 async function listMachineNames(romRoot: string) {
   if (!(await isDirectory(romRoot))) die(`ROM root not found: ${romRoot}`);
   const entries = await collectGlob("*.zip", romRoot);
@@ -176,8 +182,8 @@ function archiveSortKey(path: string): [number, number, string] {
 }
 
 async function artworkArchives(artworkRoot: string, archiveName: string) {
-  const zipArchives = await collectGlob(`${archiveName}.zip`, artworkRoot);
-  const rarArchives = await collectGlob(`${archiveName}.part*.rar`, artworkRoot);
+  const zipArchives = await collectGlob(`${archiveName}*.zip`, artworkRoot);
+  const rarArchives = await collectGlob(`${archiveName}*.rar`, artworkRoot);
   const archives = [];
   for (const entry of [...zipArchives, ...rarArchives]) {
     const path = join(artworkRoot, entry);
@@ -281,9 +287,17 @@ async function stageRoms(
   return stats;
 }
 
+async function findVideoSource(videoRoots: string[], machineName: string) {
+  for (const videoRoot of videoRoots) {
+    const source = join(videoRoot, `${machineName}.mp4`);
+    if (await isFile(source)) return source;
+  }
+  return null;
+}
+
 async function stageVideos(
   machineNames: string[],
-  videoRoot: string,
+  videoRoots: string[],
   outputRoot: string,
   dryRun: boolean,
 ): Promise<[CopyStats, Set<string>]> {
@@ -293,8 +307,8 @@ async function stageVideos(
   await ensureDir(targetRoot, dryRun);
 
   for (const machineName of machineNames) {
-    const source = join(videoRoot, `${machineName}.mp4`);
-    if (!(await isFile(source))) {
+    const source = await findVideoSource(videoRoots, machineName);
+    if (source === null) {
       stats.missing += 1;
       continue;
     }
@@ -503,13 +517,12 @@ async function main() {
   const args = parseArgs(process.argv.slice(2));
   const romRoot = join(args.sourceRoot, ROM_DIR_NAME);
   const officialRoot = join(args.sourceRoot, OFFICIAL_MEDIA_ROOT);
-  const videoRoot = join(officialRoot, VIDEO_SNAPS_DIR);
   const artworkRoot = join(officialRoot, "Artwork", "MAME");
 
   requireCommand("bsdtar");
 
   if (!(await isDirectory(args.sourceRoot))) die(`source root not found: ${args.sourceRoot}`);
-  if (!(await isDirectory(videoRoot))) die(`video snap root not found: ${videoRoot}`);
+  const videoRoots = await resolveVideoSnapRoots(join(officialRoot, VIDEO_SNAPS_PARENT));
   if (!(await isDirectory(artworkRoot))) die(`artwork root not found: ${artworkRoot}`);
 
   const machineNames = await listMachineNames(romRoot);
@@ -534,7 +547,7 @@ async function main() {
 
   const [videoStats, videoNames] = await stageVideos(
     machineNames,
-    videoRoot,
+    videoRoots,
     args.outputRoot,
     args.dryRun,
   );

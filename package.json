@@ -13,6 +13,8 @@
     "tauri:dev": "tauri dev",
     "tauri:build": "tauri build",
     "curate:library": "bun run ./ops/curate-arcade-library.ts",
+    "download:library": "bun run ./ops/download-arcade-assets.ts",
+    "mount:library": "./ops/mount-arcade-library.sh",
     "organize:library": "bun run ./ops/organize-arcade-library.ts",
     "sync:library": "./ops/sync-arcade-library.sh"
   },

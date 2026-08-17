@@ -1,4 +1,4 @@
-import { access, link, mkdir, stat } from "node:fs/promises";
+import { access, copyFile, link, mkdir, stat } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 
 export function resolvePath(path: string) {
@@ -60,20 +60,48 @@ export function shellQuote(value: string) {
   return `'${value.replaceAll("'", "'\\''")}'`;
 }
 
-/** Hardlinks source onto target, treating an identical existing file as a no-op. */
+async function sameSize(left: string, right: string) {
+  try {
+    const [leftStat, rightStat] = await Promise.all([stat(left), stat(right)]);
+    return leftStat.size === rightStat.size;
+  } catch {
+    return false;
+  }
+}
+
+let warnedCopyFallback = false;
+
+/**
+ * Hardlinks source onto target, treating an identical existing file as a
+ * no-op. Falls back to copying on filesystems without hard links (AFP/SMB
+ * network mounts); an NFS mount avoids the copy.
+ */
 export async function hardlinkFile(
   source: string,
   target: string,
   dryRun: boolean,
 ) {
   if (await pathExists(target)) {
-    if (await sameFile(source, target)) return "existing";
+    // Same inode (hardlink) or same size (earlier copy fallback) is a no-op.
+    if ((await sameFile(source, target)) || (await sameSize(source, target))) {
+      return "existing";
+    }
     throw new Error(`refusing to overwrite existing file: ${target}`);
   }
 
   if (dryRun) return "linked";
 
   await ensureDir(dirname(target), false);
-  await link(source, target);
+  try {
+    await link(source, target);
+  } catch {
+    if (!warnedCopyFallback) {
+      warnedCopyFallback = true;
+      console.error(
+        "warning: target filesystem does not support hard links; copying instead (much slower over AFP/SMB — mount the NAS via NFS to hardlink)",
+      );
+    }
+    await copyFile(source, target);
+  }
   return "linked";
 }
